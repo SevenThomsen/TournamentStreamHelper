@@ -11,6 +11,8 @@ from .Helpers.TSHDirHelper import TSHResolve
 from .Helpers.TSHSponsorHelper import TSHSponsorHelper
 from .TSHTeamPlayerWidget import TSHTeamPlayerWidget
 from .TSHColorButton import TSHColorButton
+
+from .TournamentDataProvider.NexusRoomClient import NexusRoomClient
 from.Helpers.TSHLocaleHelper import TSHLocaleHelper
 from .Helpers.TSHVersionHelper import add_beta_label
 
@@ -204,6 +206,23 @@ class TSHTeamBattleWidget(QDockWidget):
         actionsLayout.addWidget(resetEverything, 1, 0)
 
         rowLayout.addWidget(actionsCol)
+
+        # Group 4: The Nexus Sync
+        nexusCol = QWidget()
+        nexusLayout = QVBoxLayout(nexusCol)
+        nexusLayout.setContentsMargins(0, 0, 0, 0)
+        nexusLayout.setSpacing(2)
+
+        self.btNexus = QPushButton(QApplication.translate("app", "Nexus Live"))
+        self.btNexus.setFixedHeight(24)
+        self.btNexus.clicked.connect(self.PromptNexusLink)
+        nexusLayout.addWidget(self.btNexus)
+
+        self.lblNexusStatus = QLabel("")
+        self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #888888;")
+        nexusLayout.addWidget(self.lblNexusStatus)
+
+        rowLayout.addWidget(nexusCol)
         rowLayout.addStretch()
 
         scrollArea = QScrollArea()
@@ -271,6 +290,18 @@ class TSHTeamBattleWidget(QDockWidget):
         self.signals.reset_all_stocks.connect(self.ResetAllStocks)
         self.signals.reset_everything.connect(self.ResetEverything)
         self.signals.dynamicSpinner_changed.connect(self.TotalScoreExport)
+
+
+
+        # Nexus Room Client
+
+        self.nexusClient = NexusRoomClient(self)
+
+        self.nexusClient.signals.room_updated.connect(self.ApplyNexusData)
+
+        self.nexusClient.signals.connection_status_changed.connect(self.OnNexusStatusChanged)
+
+        self.nexusClient.signals.error_occurred.connect(self.OnNexusError)
 
         self.signals.team1_stock_up.connect(self.T1_Stock_Up)
         self.signals.team1_stock_down.connect(self.T1_Stock_Down)
@@ -512,3 +543,163 @@ class TSHTeamBattleWidget(QDockWidget):
             scoreCount += player.GetSpinnerValue()
         StateManager.Set("team_battle.team2_spinner-total", scoreCount)
         StateManager.Set("team_battle.team2_total-score", self.team2score.value())
+
+    # =====================================================
+    # THE NEXUS INTEGRATION
+    # =====================================================
+    def PromptNexusLink(self):
+        if self.nexusClient.is_running:
+            dlg = QMessageBox(self)
+            dlg.setWindowTitle(QApplication.translate("app", "The Nexus Live Room"))
+            dlg.setText(f"Connected to room: {self.nexusClient.slug}\nDo you want to disconnect?")
+            dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            dlg.setDefaultButton(QMessageBox.No)
+            if dlg.exec() == QMessageBox.Yes:
+                self.nexusClient.disconnect()
+            return
+
+        text, ok = QInputDialog.getText(
+            self,
+            QApplication.translate("app", "Load from The Nexus"),
+            QApplication.translate("app", "Paste Moderator TSH Link from The Nexus:\n(e.g. https://thenexus.gg/matches/.../live?token=...)"),
+            QLineEdit.Normal,
+            ""
+        )
+        if ok and text.strip():
+            self.nexusClient.connect_url(text.strip())
+
+    def OnNexusStatusChanged(self, connected: bool, message: str):
+        if connected:
+            self.btNexus.setText(QApplication.translate("app", "Nexus (Connected)"))
+            self.lblNexusStatus.setText(f"🟢 {message}")
+            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #4ade80;")
+        elif "Connecting" in message or "Reconnecting" in message:
+            self.btNexus.setText(QApplication.translate("app", "Nexus (Connecting...)"))
+            self.lblNexusStatus.setText(f"🟡 {message}")
+            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #facc15;")
+        else:
+            self.btNexus.setText(QApplication.translate("app", "Nexus Live"))
+            self.lblNexusStatus.setText(f"⚪ {message}" if message != "Disconnected" else "")
+            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #888888;")
+
+    def OnNexusError(self, error: str):
+        logger.error(f"[TSHTeamBattleWidget] Nexus error: {error}")
+        QMessageBox.warning(self, QApplication.translate("app", "Nexus Error"), error)
+
+    def ApplyNexusData(self, snapshot: dict):
+        try:
+            StateManager.BlockSaving()
+
+            fixture = snapshot.get("fixture") or {}
+            home_team = snapshot.get("home_team") or {}
+            away_team = snapshot.get("away_team") or {}
+            players = snapshot.get("players") or []
+            active_game = snapshot.get("active_game") or {}
+            live_state = snapshot.get("live_state") or {}
+            roster_selections = snapshot.get("roster_selections") or []
+            blind_picks = snapshot.get("blind_picks") or []
+
+            # 1. Team Names
+            home_name = home_team.get("name") or home_team.get("short_name") or ""
+            away_name = away_team.get("name") or away_team.get("short_name") or ""
+            if home_name:
+                t1 = self.team1column.findChild(QLineEdit, "teamName")
+                if t1 and t1.text() != home_name:
+                    t1.setText(home_name)
+                    self.Team1SponsorExport()
+            if away_name:
+                t2 = self.team2column.findChild(QLineEdit, "teamName")
+                if t2 and t2.text() != away_name:
+                    t2.setText(away_name)
+                    self.Team2SponsorExport()
+
+            # 2. Match Scores (Series)
+            if fixture.get("home_score") is not None:
+                self.team1score.setValue(int(fixture.get("home_score")))
+            if fixture.get("away_score") is not None:
+                self.team2score.setValue(int(fixture.get("away_score")))
+
+            # 3. Game Rules & Roster Size
+            game_type = active_game.get("game", "ultimate")
+            stocks_per_player = 4 if game_type == "melee" else 3
+            if self.livesNumber.value() != stocks_per_player:
+                self.livesNumber.setValue(stocks_per_player)
+
+            home_team_id = fixture.get("home_team_id")
+            away_team_id = fixture.get("away_team_id")
+
+            home_players = [p for p in players if p.get("team_id") == home_team_id]
+            away_players = [p for p in players if p.get("team_id") == away_team_id]
+
+            roster_size = max(
+                len(home_players),
+                len(away_players),
+                active_game.get("home_roster_size", 0),
+                active_game.get("away_roster_size", 0),
+                1
+            )
+            if self.playerNumber.value() != roster_size:
+                self.playerNumber.setValue(roster_size)
+
+            # 4. Tournament Phase & Match Name
+            tournament_season = snapshot.get("tournament_season") or {}
+            season_name = tournament_season.get("name") or "Nexus League"
+            if self.phaseCombo.currentText() != season_name:
+                self.phaseCombo.setCurrentText(season_name)
+                self.PhaseExport()
+
+            round_num = live_state.get("round_number")
+            match_title = f"Round {round_num}" if round_num else "Crew Battle"
+            if self.matchCombo.currentText() != match_title:
+                self.matchCombo.setCurrentText(match_title)
+                self.MatchExport()
+
+            # Selections & Characters
+            selections_by_player = {s.get("player_id"): s for s in roster_selections if s.get("player_id")}
+            blind_by_player = {bp.get("player_id"): bp for bp in blind_picks if bp.get("player_id")}
+
+            def sort_key(p):
+                sel = selections_by_player.get(p.get("id"), {})
+                return sel.get("slot_order", 999)
+
+            home_players.sort(key=sort_key)
+            away_players.sort(key=sort_key)
+
+            active_home_id = live_state.get("home_active_player_id")
+            active_away_id = live_state.get("away_active_player_id")
+
+            # 5. Populate Team 1 & Team 2 Player Widgets
+            for team_idx, (team_players, player_widgets, active_id, team_info) in enumerate([
+                (home_players, self.team1playerWidgets, active_home_id, home_team),
+                (away_players, self.team2playerWidgets, active_away_id, away_team)
+            ]):
+                sponsor = team_info.get("short_name") or ""
+                for p_idx, player in enumerate(team_players):
+                    if p_idx < len(player_widgets):
+                        pw = player_widgets[p_idx]
+                        p_id = player.get("id")
+                        tag = player.get("tag", "")
+
+                        char_name = None
+                        if p_id in selections_by_player:
+                            char_name = selections_by_player[p_id].get("selected_character")
+                        elif p_id in blind_by_player:
+                            char_name = blind_by_player[p_id].get("character")
+
+                        player_data = {
+                            "gamerTag": tag,
+                            "prefix": sponsor,
+                        }
+                        if char_name:
+                            player_data["mains"] = [char_name]
+
+                        pw.SetData(player_data, dontLoadFromDB=True, clear=False)
+
+                        is_active = (p_id == active_id) if active_id else False
+                        pw.SetActiveStatus(is_active)
+
+            self.TotalScoreExport()
+        except Exception as e:
+            logger.error(f"[TSHTeamBattleWidget] Error applying Nexus data: {e}")
+        finally:
+            StateManager.ReleaseSaving()
