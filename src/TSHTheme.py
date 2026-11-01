@@ -635,9 +635,12 @@ def get_dark_theme_qss() -> str:
         font-size: 11px;
     }}
     QLabel#lblNexusStatus {{
-        font-weight: 600;
+        font-weight: 500;
         font-size: 11px;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.2px;
+    }}
+    QFrame#nexusStatusWidget {{
+        border-radius: 4px;
     }}
 
     /* Headers and Toolbars */

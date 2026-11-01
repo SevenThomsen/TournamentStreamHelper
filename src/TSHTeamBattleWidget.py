@@ -232,16 +232,30 @@ class TSHTeamBattleWidget(QDockWidget):
         self.btNexus.setIconSize(QSize(16, 16))
         self.btNexus.clicked.connect(self.PromptNexusLink)
 
+        self.nexusStatusWidget = QFrame()
+        self.nexusStatusWidget.setObjectName("nexusStatusWidget")
+        self.nexusStatusWidget.setFixedHeight(24)
+        statusLayout = QHBoxLayout(self.nexusStatusWidget)
+        statusLayout.setContentsMargins(6, 0, 6, 0)
+        statusLayout.setSpacing(6)
+        statusLayout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.nexusStatusDot = QLabel()
+        self.nexusStatusDot.setObjectName("nexusStatusDot")
+        self.nexusStatusDot.setFixedSize(8, 8)
+        self.nexusStatusDot.setStyleSheet("background-color: transparent; border-radius: 4px;")
+
         self.lblNexusStatus = QLabel("")
         self.lblNexusStatus.setObjectName("lblNexusStatus")
-        self.lblNexusStatus.setFixedHeight(20)
-        self.lblNexusStatus.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #8e8e93;")
+        self.lblNexusStatus.setStyleSheet("color: #8e8e93; font-size: 11px; font-weight: 500;")
+
+        statusLayout.addWidget(self.nexusStatusDot)
+        statusLayout.addWidget(self.lblNexusStatus)
 
         actionsLayout.addWidget(resetValues, 0, 0)
         actionsLayout.addWidget(self.btNexus, 0, 1)
         actionsLayout.addWidget(resetEverything, 1, 0)
-        actionsLayout.addWidget(self.lblNexusStatus, 1, 1)
+        actionsLayout.addWidget(self.nexusStatusWidget, 1, 1)
 
         rowLayout.addWidget(actionsCol)
         rowLayout.addStretch()
@@ -731,25 +745,66 @@ class TSHTeamBattleWidget(QDockWidget):
                     err_msg or QApplication.translate("app", "The provided URL is not a valid Nexus match room.")
                 )
 
+    def SetNexusStatus(self, state: str, message: str):
+        """
+        Update the Nexus status indicator with a crisp painted dot and sleek dark-theme badge.
+        state: 'connected' | 'connecting' | 'transition' | 'error' | 'disconnected'
+        """
+        if not message:
+            self.nexusStatusDot.setStyleSheet("background-color: transparent;")
+            self.lblNexusStatus.setText("")
+            self.nexusStatusWidget.setStyleSheet("QFrame#nexusStatusWidget { background-color: transparent; border: none; }")
+            return
+
+        self.lblNexusStatus.setText(message)
+
+        if state == "connected":
+            self.nexusStatusDot.setStyleSheet("background-color: #22c55e; border-radius: 4px;")
+            self.lblNexusStatus.setStyleSheet("color: #e4e4e7; font-size: 11px; font-weight: 500;")
+            self.nexusStatusWidget.setStyleSheet(
+                "QFrame#nexusStatusWidget { background-color: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 4px; }"
+            )
+        elif state == "transition":
+            self.nexusStatusDot.setStyleSheet("background-color: #38bdf8; border-radius: 4px;")
+            self.lblNexusStatus.setStyleSheet("color: #e4e4e7; font-size: 11px; font-weight: 500;")
+            self.nexusStatusWidget.setStyleSheet(
+                "QFrame#nexusStatusWidget { background-color: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 4px; }"
+            )
+        elif state == "connecting":
+            self.nexusStatusDot.setStyleSheet("background-color: #f59e0b; border-radius: 4px;")
+            self.lblNexusStatus.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 500;")
+            self.nexusStatusWidget.setStyleSheet(
+                "QFrame#nexusStatusWidget { background-color: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 4px; }"
+            )
+        elif state == "error":
+            self.nexusStatusDot.setStyleSheet("background-color: #ef4444; border-radius: 4px;")
+            self.lblNexusStatus.setStyleSheet("color: #fca5a5; font-size: 11px; font-weight: 500;")
+            self.nexusStatusWidget.setStyleSheet(
+                "QFrame#nexusStatusWidget { background-color: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 4px; }"
+            )
+        else:  # disconnected
+            self.nexusStatusDot.setStyleSheet("background-color: #71717a; border-radius: 4px;")
+            self.lblNexusStatus.setStyleSheet("color: #8e8e93; font-size: 11px; font-weight: 500;")
+            self.nexusStatusWidget.setStyleSheet(
+                "QFrame#nexusStatusWidget { background-color: #18181b; border: 1px solid #2e2e33; border-radius: 4px; }"
+            )
+
     def OnNexusStatusChanged(self, connected: bool, message: str):
         if connected:
             self.btNexus.setText(QApplication.translate("app", "Nexus (Connected)"))
-            self.lblNexusStatus.setText(f"🟢 {message}")
-            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #4ade80;")
+            self.SetNexusStatus("connected", message)
         elif "Connecting" in message or "Reconnecting" in message:
             self.btNexus.setText(QApplication.translate("app", "Nexus (Connecting...)"))
-            self.lblNexusStatus.setText(f"🟡 {message}")
-            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #facc15;")
+            self.SetNexusStatus("connecting", message)
         else:
             self._ResetNexusTransitionState()
             self.btNexus.setText(QApplication.translate("app", "Load from The Nexus"))
-            self.lblNexusStatus.setText(f"⚪ {message}" if message != "Disconnected" else "")
-            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #888888;")
+            self.SetNexusStatus("disconnected", message if message != "Disconnected" else "")
 
     def OnNexusError(self, error: str):
         logger.error(f"[TSHTeamBattleWidget] Nexus error: {error}")
-        self.lblNexusStatus.setText(f"🔴 {error[:25]}..." if len(error) > 25 else f"🔴 {error}")
-        self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #ef4444;")
+        msg = f"{error[:25]}..." if len(error) > 25 else error
+        self.SetNexusStatus("error", msg)
 
     def _ResetNexusTransitionState(self):
         if hasattr(self, "_transition_timer") and self._transition_timer.isActive():
@@ -763,7 +818,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
     def ApplyNexusData(self, snapshot: dict):
         if getattr(self, "_transition_timer", None) and self._transition_timer.isActive():
-            # While holding the completed game display for 15s, queue the latest snapshot
+            # While holding the completed game display for 30s, queue the latest snapshot
             self._pending_snapshot = snapshot
             return
 
@@ -789,7 +844,7 @@ class TSHTeamBattleWidget(QDockWidget):
                 is_game_transition = True
 
         if is_game_transition and not is_match_complete:
-            # Game completed! Hold the final completed board for 15s before applying the new game.
+            # Game completed! Hold the final completed board for 30s before applying the new game.
             # 1. Update series score immediately so OBS diamond displays the new game win
             if incoming_home_score is not None:
                 self.team1score.setValue(int(incoming_home_score))
@@ -827,13 +882,12 @@ class TSHTeamBattleWidget(QDockWidget):
 
             self.TotalScoreExport()
 
-            # 3. Queue snapshot and start 15s countdown
+            # 3. Queue snapshot and start 30s countdown
             self._pending_snapshot = snapshot
-            self._transition_seconds_left = 15
+            self._transition_seconds_left = 30
             completed_game_num = self._last_game_order or (incoming_game_order - 1 if incoming_game_order else 1)
             self._completed_game_label = f"Game {completed_game_num}"
-            self.lblNexusStatus.setText(f"🟢 {self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
-            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #38bdf8;")
+            self.SetNexusStatus("transition", f"{self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
             self._transition_timer.start(1000)
             return
 
@@ -842,8 +896,7 @@ class TSHTeamBattleWidget(QDockWidget):
     def _OnTransitionTimerTick(self):
         self._transition_seconds_left -= 1
         if self._transition_seconds_left > 0:
-            self.lblNexusStatus.setText(f"🟢 {self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
-            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #38bdf8;")
+            self.SetNexusStatus("transition", f"{self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
         else:
             self._transition_timer.stop()
             self._ApplyPendingGameSnapshot()
@@ -853,8 +906,7 @@ class TSHTeamBattleWidget(QDockWidget):
         self._pending_snapshot = None
         if snapshot:
             self._DoApplyNexusData(snapshot)
-            self.lblNexusStatus.setText("🟢 Connected")
-            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #4ade80;")
+            self.SetNexusStatus("connected", "Connected")
 
     def _DoApplyNexusData(self, snapshot: dict):
         try:
@@ -1098,8 +1150,7 @@ class TSHTeamBattleWidget(QDockWidget):
                         if pw.IsActive():
                             pw.dynamicSpinner.setValue(0)
                             pw.SetEliminatedStatus(True)
-                self.lblNexusStatus.setText(f"🟢 Match complete ({home_score} - {away_score})")
-                self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #4ade80;")
+                self.SetNexusStatus("connected", f"Match complete ({home_score} - {away_score})")
 
             self.TotalScoreExport()
         except Exception as e:
