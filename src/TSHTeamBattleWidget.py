@@ -378,6 +378,18 @@ class TSHTeamBattleWidget(QDockWidget):
         if app:
             app.aboutToQuit.connect(self.nexusClient.disconnect)
 
+        # Nexus Game Transition Delay State (holds completed game on screen for 15s)
+        self._last_game_id = None
+        self._last_game_order = None
+        self._last_home_score = None
+        self._last_away_score = None
+        self._pending_snapshot = None
+        self._transition_seconds_left = 0
+        self._completed_game_label = "Game"
+        self._transition_timer = QTimer(self)
+        self._transition_timer.setInterval(1000)
+        self._transition_timer.timeout.connect(self._OnTransitionTimerTick)
+
         self.signals.team1_stock_up.connect(self.T1_Stock_Up)
         self.signals.team1_stock_down.connect(self.T1_Stock_Down)
         self.signals.team2_stock_up.connect(self.T2_Stock_Up)
@@ -699,6 +711,7 @@ class TSHTeamBattleWidget(QDockWidget):
             dlg.setDefaultButton(QMessageBox.No)
             if dlg.exec() == QMessageBox.Yes:
                 self.nexusClient.disconnect()
+                self._ResetNexusTransitionState()
             return
 
         text, ok = QInputDialog.getText(
@@ -709,6 +722,7 @@ class TSHTeamBattleWidget(QDockWidget):
             ""
         )
         if ok and text.strip():
+            self._ResetNexusTransitionState()
             success, err_msg = self.nexusClient.connect_url(text.strip())
             if not success:
                 QMessageBox.warning(
@@ -727,6 +741,7 @@ class TSHTeamBattleWidget(QDockWidget):
             self.lblNexusStatus.setText(f"🟡 {message}")
             self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #facc15;")
         else:
+            self._ResetNexusTransitionState()
             self.btNexus.setText(QApplication.translate("app", "Load from The Nexus"))
             self.lblNexusStatus.setText(f"⚪ {message}" if message != "Disconnected" else "")
             self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #888888;")
@@ -736,7 +751,112 @@ class TSHTeamBattleWidget(QDockWidget):
         self.lblNexusStatus.setText(f"🔴 {error[:25]}..." if len(error) > 25 else f"🔴 {error}")
         self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #ef4444;")
 
+    def _ResetNexusTransitionState(self):
+        if hasattr(self, "_transition_timer") and self._transition_timer.isActive():
+            self._transition_timer.stop()
+        self._pending_snapshot = None
+        self._last_game_id = None
+        self._last_game_order = None
+        self._last_home_score = None
+        self._last_away_score = None
+        self._transition_seconds_left = 0
+
     def ApplyNexusData(self, snapshot: dict):
+        if getattr(self, "_transition_timer", None) and self._transition_timer.isActive():
+            # While holding the completed game display for 15s, queue the latest snapshot
+            self._pending_snapshot = snapshot
+            return
+
+        fixture = snapshot.get("fixture") or {}
+        active_game = snapshot.get("active_game") or {}
+        live_state = snapshot.get("live_state") or {}
+
+        incoming_game_id = active_game.get("id")
+        incoming_game_order = active_game.get("game_order")
+        incoming_home_score = fixture.get("home_score")
+        incoming_away_score = fixture.get("away_score")
+        is_match_complete = (
+            fixture.get("status") == "completed" or
+            live_state.get("phase") == "complete"
+        )
+
+        is_game_transition = False
+        if self._last_game_order is not None and incoming_game_order is not None:
+            if incoming_game_order > self._last_game_order:
+                is_game_transition = True
+        elif self._last_game_id is not None and incoming_game_id is not None:
+            if incoming_game_id != self._last_game_id:
+                is_game_transition = True
+
+        if is_game_transition and not is_match_complete:
+            # Game completed! Hold the final completed board for 15s before applying the new game.
+            # 1. Update series score immediately so OBS diamond displays the new game win
+            if incoming_home_score is not None:
+                self.team1score.setValue(int(incoming_home_score))
+            if incoming_away_score is not None:
+                self.team2score.setValue(int(incoming_away_score))
+
+            # 2. Mark the losing team at 0 stocks
+            home_won = (
+                self._last_home_score is not None and incoming_home_score is not None and
+                int(incoming_home_score) > int(self._last_home_score)
+            )
+            away_won = (
+                self._last_away_score is not None and incoming_away_score is not None and
+                int(incoming_away_score) > int(self._last_away_score)
+            )
+            if not home_won and not away_won:
+                if incoming_home_score is not None and incoming_away_score is not None:
+                    if int(incoming_home_score) > int(self._last_home_score or 0):
+                        home_won = True
+                    elif int(incoming_away_score) > int(self._last_away_score or 0):
+                        away_won = True
+
+            if home_won:
+                self.team2stocks.setValue(0)
+                for pw in self.team2playerWidgets:
+                    if pw.IsActive():
+                        pw.dynamicSpinner.setValue(0)
+                        pw.SetEliminatedStatus(True)
+            elif away_won:
+                self.team1stocks.setValue(0)
+                for pw in self.team1playerWidgets:
+                    if pw.IsActive():
+                        pw.dynamicSpinner.setValue(0)
+                        pw.SetEliminatedStatus(True)
+
+            self.TotalScoreExport()
+
+            # 3. Queue snapshot and start 15s countdown
+            self._pending_snapshot = snapshot
+            self._transition_seconds_left = 15
+            completed_game_num = self._last_game_order or (incoming_game_order - 1 if incoming_game_order else 1)
+            self._completed_game_label = f"Game {completed_game_num}"
+            self.lblNexusStatus.setText(f"🟢 {self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
+            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #38bdf8;")
+            self._transition_timer.start(1000)
+            return
+
+        self._DoApplyNexusData(snapshot)
+
+    def _OnTransitionTimerTick(self):
+        self._transition_seconds_left -= 1
+        if self._transition_seconds_left > 0:
+            self.lblNexusStatus.setText(f"🟢 {self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
+            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #38bdf8;")
+        else:
+            self._transition_timer.stop()
+            self._ApplyPendingGameSnapshot()
+
+    def _ApplyPendingGameSnapshot(self):
+        snapshot = self._pending_snapshot
+        self._pending_snapshot = None
+        if snapshot:
+            self._DoApplyNexusData(snapshot)
+            self.lblNexusStatus.setText("🟢 Connected")
+            self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #4ade80;")
+
+    def _DoApplyNexusData(self, snapshot: dict):
         try:
             StateManager.BlockSaving()
             self._syncing_stocks += 1
@@ -952,6 +1072,34 @@ class TSHTeamBattleWidget(QDockWidget):
             ]
             StateManager.Set("team_battle.team.1.blind_picks", team1_blind_picks)
             StateManager.Set("team_battle.team.2.blind_picks", team2_blind_picks)
+
+            # Record last applied state
+            self._last_game_id = active_game.get("id")
+            self._last_game_order = active_game.get("game_order")
+            self._last_home_score = fixture.get("home_score")
+            self._last_away_score = fixture.get("away_score")
+
+            is_match_complete = (
+                fixture.get("status") == "completed" or
+                live_state.get("phase") == "complete"
+            )
+            if is_match_complete:
+                home_score = int(fixture.get("home_score") or 0)
+                away_score = int(fixture.get("away_score") or 0)
+                if home_score > away_score:
+                    self.team2stocks.setValue(0)
+                    for pw in self.team2playerWidgets:
+                        if pw.IsActive():
+                            pw.dynamicSpinner.setValue(0)
+                            pw.SetEliminatedStatus(True)
+                elif away_score > home_score:
+                    self.team1stocks.setValue(0)
+                    for pw in self.team1playerWidgets:
+                        if pw.IsActive():
+                            pw.dynamicSpinner.setValue(0)
+                            pw.SetEliminatedStatus(True)
+                self.lblNexusStatus.setText(f"🟢 Match complete ({home_score} - {away_score})")
+                self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #4ade80;")
 
             self.TotalScoreExport()
         except Exception as e:
