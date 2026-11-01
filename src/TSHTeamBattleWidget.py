@@ -78,21 +78,21 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.playerNumber = QSpinBox()
         self.playerNumber.setObjectName("playerNumber")
-        self.playerNumber.setFixedWidth(58)
+        self.playerNumber.setFixedWidth(52)
         self.playerNumber.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.playerNumber.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.playerNumber.valueChanged.connect(
             lambda val: self.SetPlayersPerTeam(val))
 
         self.characterNumber = QSpinBox()
-        self.characterNumber.setFixedWidth(58)
+        self.characterNumber.setFixedWidth(52)
         self.characterNumber.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.characterNumber.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.characterNumber.valueChanged.connect(self.SetCharacterNumber)
 
         self.lifeLabel = QLabel(QApplication.translate("app", "Stocks"))
         self.livesNumber = QSpinBox()
-        self.livesNumber.setFixedWidth(58)
+        self.livesNumber.setFixedWidth(52)
         self.livesNumber.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.livesNumber.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.livesNumber.valueChanged.connect(self.SetSpinnerForPlayers)
@@ -121,7 +121,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.bestOf = QSpinBox()
         self.bestOf.setObjectName("bestOf")
-        self.bestOf.setFixedWidth(58)
+        self.bestOf.setFixedWidth(52)
         self.bestOf.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.bestOf.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.bestOf.setMinimum(0)
@@ -279,7 +279,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.team1score = QSpinBox()
         self.team1score.setObjectName("team1score")
-        self.team1score.setFixedWidth(58)
+        self.team1score.setFixedWidth(52)
         self.team1score.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.team1score.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.team1score.setRange(0, 99)
@@ -288,7 +288,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.team1stocks = QSpinBox()
         self.team1stocks.setObjectName("team1stocks")
-        self.team1stocks.setFixedWidth(68)
+        self.team1stocks.setFixedWidth(60)
         self.team1stocks.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.team1stocks.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.team1stocks.setRange(0, 999)
@@ -323,7 +323,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.team2score = QSpinBox()
         self.team2score.setObjectName("team2score")
-        self.team2score.setFixedWidth(58)
+        self.team2score.setFixedWidth(52)
         self.team2score.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.team2score.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.team2score.setRange(0, 99)
@@ -332,7 +332,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.team2stocks = QSpinBox()
         self.team2stocks.setObjectName("team2stocks")
-        self.team2stocks.setFixedWidth(68)
+        self.team2stocks.setFixedWidth(60)
         self.team2stocks.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.team2stocks.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.team2stocks.setRange(0, 999)
