@@ -207,6 +207,7 @@ class TSHTeamBattleWidget(QDockWidget):
         menu.addSection(QApplication.translate("app", "Players"))
 
         self.elements = [
+            [QApplication.translate("app", "Sponsors"),   ["team"],                            "show_sponsors"],
             [QApplication.translate("app", "Twitter"),    ["twitter", "twitterLabel"],           "show_social"],
             [QApplication.translate("app", "Location"),   ["locationLabel", "state", "country"], "show_location"],
             [QApplication.translate("app", "Characters"), ["characters"],                        "show_characters"],
@@ -215,7 +216,8 @@ class TSHTeamBattleWidget(QDockWidget):
         for element in self.elements:
             action: QAction = self.eyeBt.menu().addAction(element[0])
             action.setCheckable(True)
-            action.setChecked(SettingsManager.Get(f"display_options.{element[2]}", True))
+            default_val = False if element[2] == "show_sponsors" else True
+            action.setChecked(SettingsManager.Get(f"display_options.{element[2]}", default_val))
             action.toggled.connect(
                 lambda toggled, action=action, element=element: [
                     self.ToggleElements(action, element[1]),
@@ -354,8 +356,6 @@ class TSHTeamBattleWidget(QDockWidget):
         self.Team1StocksExport()
         self.Team2StocksExport()
 
-        self.team1column.findChild(QCheckBox, "separateSponsors").toggled.connect(self.ToggleSponsorsForTeam1)
-        self.team2column.findChild(QCheckBox, "separateSponsors").toggled.connect(self.ToggleSponsorsForTeam2)
 
         # Hook into Signals for Control
         self.signals.reset_all_stocks.connect(self.ResetAllStocks)
@@ -440,14 +440,6 @@ class TSHTeamBattleWidget(QDockWidget):
             self._syncing_stocks = 0
         self.TotalScoreExport()
     
-    def ToggleSponsorsForTeam1(self):
-        for player in self.team1playerWidgets:
-            player.ToggleSponsorDisplay()
-    
-    def ToggleSponsorsForTeam2(self):
-        for player in self.team2playerWidgets:
-            player.ToggleSponsorDisplay()
-    
     def SetSpinnerForPlayers(self):
         self._syncing_stocks += 1
         try:
@@ -476,8 +468,6 @@ class TSHTeamBattleWidget(QDockWidget):
             p.SetDefaultSpinnerValue(self.livesNumber.value())
             p.SetDefaultSpinnerValue(self.livesNumber.value())
 
-            if self.team1column.findChild(QCheckBox, "separateSponsors").isChecked():
-                p.ToggleSponsorDisplay()
 
             self.ApplyVisibility(p)
             
@@ -503,8 +493,6 @@ class TSHTeamBattleWidget(QDockWidget):
             self.team2column.findChild(QScrollArea).widget().layout().addWidget(p)
             p.SetCharactersPerPlayer(self.characterNumber.value())
 
-            if self.team2column.findChild(QCheckBox, "separateSponsors").isChecked():
-                p.ToggleSponsorDisplay()
 
             self.ApplyVisibility(p)
             
@@ -549,7 +537,8 @@ class TSHTeamBattleWidget(QDockWidget):
     def ApplyVisibility(self, pw):
         if hasattr(self, "elements"):
             for element in self.elements:
-                visible = SettingsManager.Get(f"display_options.{element[2]}", True)
+                default_val = False if element[2] == "show_sponsors" else True
+                visible = SettingsManager.Get(f"display_options.{element[2]}", default_val)
                 for el in element[1]:
                     w = pw.findChild(QWidget, el)
                     if w:
