@@ -21,6 +21,7 @@ from loguru import logger
 class TSHTeamPlayerWidgetSignals(QObject):
     playerId_changed = Signal()
     dynamicSpinner_changed = Signal()
+    stock_delta = Signal(int, int)
     activeStatus_changed = Signal(int)
     deathStatus_changed = Signal(int)
     toggleDeathTrigger = Signal(bool)
@@ -133,6 +134,8 @@ class TSHTeamPlayerWidget(QGroupBox):
         
         self.dynamicSpinner.valueChanged.connect(self.instanceSignals.dynamicSpinner_changed.emit)
         self.dynamicSpinner.valueChanged.connect(self.SpinnerHandling)
+        self._previous_stock = self.dynamicSpinner.value()
+        self.dynamicSpinner.valueChanged.connect(self._OnSpinnerValueChanged)
 
         self.SetCharactersPerPlayer(1)
 
@@ -201,11 +204,19 @@ class TSHTeamPlayerWidget(QGroupBox):
     def GetSpinnerValue(self):
         return self.dynamicSpinner.value()
     
+    def _OnSpinnerValueChanged(self, new_val):
+        old_val = getattr(self, "_previous_stock", new_val)
+        self._previous_stock = new_val
+        diff = new_val - old_val
+        if diff != 0:
+            self.instanceSignals.stock_delta.emit(self.teamNumber, diff)
+
     def ResetDynamicSpinner(self):
         if self.battleMode is TSHTeamBattleModeEnum.STOCK_POOL:
             self.dynamicSpinner.setValue(self.defaultSpinnerValue)
         elif self.battleMode is TSHTeamBattleModeEnum.FIRST_TO:
             self.dynamicSpinner.setValue(0)
+        self._previous_stock = self.dynamicSpinner.value()
         self.findChild(QCheckBox, "dead").setChecked(False)
 
     def IsActive(self):

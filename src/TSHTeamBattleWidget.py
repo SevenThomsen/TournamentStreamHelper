@@ -93,9 +93,9 @@ class TSHTeamBattleWidget(QDockWidget):
         self.livesNumber.valueChanged.connect(self.TotalScoreExport)
 
         self.modeCombo = QComboBox()
-        self.modeCombo.currentIndexChanged.connect(self.SwitchBattleMode)
         for mode in TSHTeamBattleModeEnum:
             self.modeCombo.addItem(mode.translated())
+        self.modeCombo.currentIndexChanged.connect(self.SwitchBattleMode)
 
         self.phaseCombo = QComboBox()
         self.phaseCombo.setObjectName("phaseCombo")
@@ -267,10 +267,30 @@ class TSHTeamBattleWidget(QDockWidget):
         self.colorButton1.colorChanged.connect(
             lambda color: StateManager.Set(f"team_battle.team.{1}.color", color))
         self.colorButton1.setColor(DEFAULT_TEAM1_COLOR)
+        self._syncing_stocks = 0
+
         self.team1score = QSpinBox()
-        self.team1column.findChild(QHBoxLayout, "team_header").layout().addWidget(self.team1score)
+        self.team1score.setObjectName("team1score")
+        self.team1score.setFixedWidth(50)
+        self.team1score.setRange(0, 99)
+        self.team1score.setToolTip(QApplication.translate("app", "Series Score (Sets Won)"))
         self.team1score.valueChanged.connect(self.Team1TotalScoreExport)
-        self.team1score.valueChanged.emit(0)
+
+        self.team1stocks = QSpinBox()
+        self.team1stocks.setObjectName("team1stocks")
+        self.team1stocks.setFixedWidth(52)
+        self.team1stocks.setRange(0, 999)
+        self.team1stocks.setValue(12)
+        self.team1stocks.setToolTip(QApplication.translate("app", "Team Remaining Stocks"))
+        self.team1stocks.valueChanged.connect(self.Team1StocksExport)
+
+        t1_header = self.team1column.findChild(QHBoxLayout, "team_header")
+        t1_score_label = QLabel(QApplication.translate("app", "Score:"))
+        t1_stocks_label = QLabel(QApplication.translate("app", "Stocks:"))
+        t1_header.addWidget(t1_score_label)
+        t1_header.addWidget(self.team1score)
+        t1_header.addWidget(t1_stocks_label)
+        t1_header.addWidget(self.team1stocks)
         self.widgetArea.layout().addWidget(self.team1column)
 
         self.team2column = uic.loadUi(TSHResolve("src/layout/TSHBattleTeam.ui"))
@@ -288,16 +308,35 @@ class TSHTeamBattleWidget(QDockWidget):
         self.colorButton2.colorChanged.connect(
             lambda color: StateManager.Set(f"team_battle.team.{2}.color", color))
         self.colorButton2.setColor(DEFAULT_TEAM2_COLOR)
+
         self.team2score = QSpinBox()
-        self.team2column.findChild(QHBoxLayout, "team_header").layout().addWidget(self.team2score)
+        self.team2score.setObjectName("team2score")
+        self.team2score.setFixedWidth(50)
+        self.team2score.setRange(0, 99)
+        self.team2score.setToolTip(QApplication.translate("app", "Series Score (Sets Won)"))
         self.team2score.valueChanged.connect(self.Team2TotalScoreExport)
-        self.team2score.valueChanged.emit(0)
+
+        self.team2stocks = QSpinBox()
+        self.team2stocks.setObjectName("team2stocks")
+        self.team2stocks.setFixedWidth(52)
+        self.team2stocks.setRange(0, 999)
+        self.team2stocks.setValue(12)
+        self.team2stocks.setToolTip(QApplication.translate("app", "Team Remaining Stocks"))
+        self.team2stocks.valueChanged.connect(self.Team2StocksExport)
+
+        t2_header = self.team2column.findChild(QHBoxLayout, "team_header")
+        t2_score_label = QLabel(QApplication.translate("app", "Score:"))
+        t2_stocks_label = QLabel(QApplication.translate("app", "Stocks:"))
+        t2_header.addWidget(t2_score_label)
+        t2_header.addWidget(self.team2score)
+        t2_header.addWidget(t2_stocks_label)
+        t2_header.addWidget(self.team2stocks)
         self.widgetArea.layout().addWidget(self.team2column)
 
         self.widget.layout().addWidget(scrollArea, 1)
-        
-        self.team1score.valueChanged.connect(self.Team1TotalScoreExport)
-        self.team2score.valueChanged.connect(self.Team2TotalScoreExport)
+
+        self.Team1StocksExport()
+        self.Team2StocksExport()
 
         self.team1column.findChild(QCheckBox, "separateSponsors").toggled.connect(self.ToggleSponsorsForTeam1)
         self.team2column.findChild(QCheckBox, "separateSponsors").toggled.connect(self.ToggleSponsorsForTeam2)
@@ -330,9 +369,15 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.ExportBestOf()
         
-        self.playerNumber.setValue(1)
-        self.characterNumber.setValue(1)
-        self.livesNumber.setValue(0)
+        self._syncing_stocks += 1
+        try:
+            self.playerNumber.setValue(1)
+            self.characterNumber.setValue(1)
+            self.livesNumber.setValue(3)
+            self.team1stocks.setValue(12)
+            self.team2stocks.setValue(12)
+        finally:
+            self._syncing_stocks = 0
 
     # =====================================================
     # GENERAL CONTROL METHODS
@@ -344,7 +389,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         if self.battleMode is TSHTeamBattleModeEnum.STOCK_POOL:
             self.lifeLabel.setText(QApplication.translate("app", "Stocks"))
-            self.livesNumber.setValue(0)
+            self.livesNumber.setValue(3)
             for pw in self.playerWidgets:
                 pw.SetBattleMode(self.battleMode)
         elif self.battleMode is TSHTeamBattleModeEnum.FIRST_TO:
@@ -355,13 +400,29 @@ class TSHTeamBattleWidget(QDockWidget):
         StateManager.Set("team_battle.battle_mode", self.battleMode.name)
     
     def ResetAllStocks(self):
-        for pw in self.playerWidgets:
-            pw.ResetDynamicSpinner()
+        self._syncing_stocks += 1
+        try:
+            for pw in self.playerWidgets:
+                pw.ResetDynamicSpinner()
+            stk_per_player = self.livesNumber.value() if self.livesNumber.value() > 0 else 3
+            self.team1stocks.setValue(len(self.team1playerWidgets) * stk_per_player)
+            self.team2stocks.setValue(len(self.team2playerWidgets) * stk_per_player)
+        finally:
+            self._syncing_stocks = 0
+        self.TotalScoreExport()
 
     def ResetEverything(self):
-        for pw in self.playerWidgets:
-            pw.ResetDynamicSpinner()
-            pw.Clear()
+        self._syncing_stocks += 1
+        try:
+            for pw in self.playerWidgets:
+                pw.ResetDynamicSpinner()
+                pw.Clear()
+            stk_per_player = self.livesNumber.value() if self.livesNumber.value() > 0 else 3
+            self.team1stocks.setValue(len(self.team1playerWidgets) * stk_per_player)
+            self.team2stocks.setValue(len(self.team2playerWidgets) * stk_per_player)
+        finally:
+            self._syncing_stocks = 0
+        self.TotalScoreExport()
     
     def ToggleSponsorsForTeam1(self):
         for player in self.team1playerWidgets:
@@ -372,8 +433,12 @@ class TSHTeamBattleWidget(QDockWidget):
             player.ToggleSponsorDisplay()
     
     def SetSpinnerForPlayers(self):
-        for pw in self.playerWidgets:
-            pw.SetDefaultSpinnerValue(self.livesNumber.value())
+        self._syncing_stocks += 1
+        try:
+            for pw in self.playerWidgets:
+                pw.SetDefaultSpinnerValue(self.livesNumber.value())
+        finally:
+            self._syncing_stocks = max(0, self._syncing_stocks - 1)
     
     # =====================================================
     # NECESSARY PLAYER METHODS
@@ -392,6 +457,8 @@ class TSHTeamBattleWidget(QDockWidget):
 
             self.team1column.findChild(QScrollArea).widget().layout().addWidget(p)
             p.SetCharactersPerPlayer(self.characterNumber.value())
+            p.SetDefaultSpinnerValue(self.livesNumber.value())
+            p.SetDefaultSpinnerValue(self.livesNumber.value())
 
             if self.team1column.findChild(QCheckBox, "separateSponsors").isChecked():
                 p.ToggleSponsorDisplay()
@@ -400,6 +467,7 @@ class TSHTeamBattleWidget(QDockWidget):
             
             self.signals.dynamicSpinner_changed.connect(p.instanceSignals.dynamicSpinner_changed)
             p.instanceSignals.dynamicSpinner_changed.connect(self.TotalScoreExport)
+            p.instanceSignals.stock_delta.connect(self.OnPlayerStockDelta)
 
             index = len(self.team1playerWidgets)
 
@@ -426,6 +494,7 @@ class TSHTeamBattleWidget(QDockWidget):
             
             self.signals.dynamicSpinner_changed.connect(p.instanceSignals.dynamicSpinner_changed)
             p.instanceSignals.dynamicSpinner_changed.connect(self.TotalScoreExport)
+            p.instanceSignals.stock_delta.connect(self.OnPlayerStockDelta)
 
             index = len(self.team2playerWidgets)
 
@@ -563,23 +632,55 @@ class TSHTeamBattleWidget(QDockWidget):
             first_to_template = TSHLocaleHelper.matchNames.get("first_to", "First to {0}")
             StateManager.Set("team_battle.first_to_text", first_to_template.format(first_to) if first_to > 0 else "")
     
+    def OnPlayerStockDelta(self, team_number: int, delta: int):
+        if getattr(self, "_syncing_stocks", 0) > 0:
+            return
+        if team_number == 1:
+            self.team1stocks.setValue(max(0, self.team1stocks.value() + delta))
+        elif team_number == 2:
+            self.team2stocks.setValue(max(0, self.team2stocks.value() + delta))
+
+    def Team1StocksExport(self):
+        if not hasattr(self, "team1stocks"):
+            return
+        val = self.team1stocks.value()
+        with StateManager.SaveBlock():
+            StateManager.Set("team_battle.team1_stocks", val)
+            StateManager.Set("team_battle.team.1.stocks", val)
+
+    def Team2StocksExport(self):
+        if not hasattr(self, "team2stocks"):
+            return
+        val = self.team2stocks.value()
+        with StateManager.SaveBlock():
+            StateManager.Set("team_battle.team2_stocks", val)
+            StateManager.Set("team_battle.team.2.stocks", val)
+
     def TotalScoreExport(self):
         self.Team1TotalScoreExport()
         self.Team2TotalScoreExport()
+        self.Team1StocksExport()
+        self.Team2StocksExport()
     
     def Team1TotalScoreExport(self):
+        if not hasattr(self, "team1score"):
+            return
         scoreCount = 0
         for player in self.team1playerWidgets:
             scoreCount += player.GetSpinnerValue()
         StateManager.Set("team_battle.team1_spinner-total", scoreCount)
         StateManager.Set("team_battle.team1_total-score", self.team1score.value())
+        StateManager.Set("team_battle.team.1.score", self.team1score.value())
     
     def Team2TotalScoreExport(self):
+        if not hasattr(self, "team2score"):
+            return
         scoreCount = 0
         for player in self.team2playerWidgets:
             scoreCount += player.GetSpinnerValue()
         StateManager.Set("team_battle.team2_spinner-total", scoreCount)
         StateManager.Set("team_battle.team2_total-score", self.team2score.value())
+        StateManager.Set("team_battle.team.2.score", self.team2score.value())
 
     # =====================================================
     # THE NEXUS INTEGRATION
@@ -633,6 +734,7 @@ class TSHTeamBattleWidget(QDockWidget):
     def ApplyNexusData(self, snapshot: dict):
         try:
             StateManager.BlockSaving()
+            self._syncing_stocks += 1
 
             fixture = snapshot.get("fixture") or {}
             home_team = snapshot.get("home_team") or {}
@@ -657,11 +759,24 @@ class TSHTeamBattleWidget(QDockWidget):
                     t2.setText(away_name)
                     self.Team2SponsorExport()
 
-            # 2. Match Scores (Series)
+            # 2. Match Scores (Series & Remaining Team Stocks)
             if fixture.get("home_score") is not None:
                 self.team1score.setValue(int(fixture.get("home_score")))
             if fixture.get("away_score") is not None:
                 self.team2score.setValue(int(fixture.get("away_score")))
+
+            home_stocks = live_state.get("home_stocks")
+            if home_stocks is not None:
+                try:
+                    self.team1stocks.setValue(int(home_stocks))
+                except (ValueError, TypeError):
+                    pass
+            away_stocks = live_state.get("away_stocks")
+            if away_stocks is not None:
+                try:
+                    self.team2stocks.setValue(int(away_stocks))
+                except (ValueError, TypeError):
+                    pass
 
             # 3. Game Rules & Roster Size
             game_type = active_game.get("game", "ultimate")
@@ -684,6 +799,7 @@ class TSHTeamBattleWidget(QDockWidget):
             )
             if self.playerNumber.value() != roster_size:
                 self.playerNumber.setValue(roster_size)
+            self.SetSpinnerForPlayers()
 
             # 4. Tournament Name, Phase, Best Of & Match Name
             tournament_season = snapshot.get("tournament_season") or {}
@@ -740,11 +856,22 @@ class TSHTeamBattleWidget(QDockWidget):
             active_away_id = live_state.get("away_active_player_id")
 
             # 5. Populate Team 1 & Team 2 Player Widgets
-            for team_idx, (team_players, player_widgets, active_id, team_info) in enumerate([
-                (home_players, self.team1playerWidgets, active_home_id, home_team),
-                (away_players, self.team2playerWidgets, active_away_id, away_team)
+            home_round_start = live_state.get("home_round_start_stocks")
+            away_round_start = live_state.get("away_round_start_stocks")
+            stk_default = stocks_per_player
+
+            for team_idx, (team_players, player_widgets, active_id, team_info, round_start_stk) in enumerate([
+                (home_players, self.team1playerWidgets, active_home_id, home_team, home_round_start),
+                (away_players, self.team2playerWidgets, active_away_id, away_team, away_round_start)
             ]):
                 sponsor = team_info.get("short_name") or ""
+                active_idx = None
+                if active_id:
+                    for i, p in enumerate(team_players):
+                        if p.get("id") == active_id:
+                            active_idx = i
+                            break
+
                 for p_idx, player in enumerate(team_players):
                     if p_idx < len(player_widgets):
                         pw = player_widgets[p_idx]
@@ -769,8 +896,29 @@ class TSHTeamBattleWidget(QDockWidget):
                         is_active = (p_id == active_id) if active_id else False
                         pw.SetActiveStatus(is_active)
 
+                        # Set player stocks and eliminated status
+                        if active_idx is not None:
+                            if p_idx < active_idx:
+                                pw.dynamicSpinner.setValue(0)
+                                pw.SetEliminatedStatus(True)
+                                pw._previous_stock = 0
+                            elif p_idx == active_idx:
+                                cur_stk = int(round_start_stk) if round_start_stk is not None else stk_default
+                                pw.dynamicSpinner.setValue(cur_stk)
+                                pw.SetEliminatedStatus(cur_stk <= 0)
+                                pw._previous_stock = cur_stk
+                            else:
+                                pw.dynamicSpinner.setValue(stk_default)
+                                pw.SetEliminatedStatus(False)
+                                pw._previous_stock = stk_default
+                        else:
+                            pw.dynamicSpinner.setValue(stk_default)
+                            pw.SetEliminatedStatus(False)
+                            pw._previous_stock = stk_default
+
             self.TotalScoreExport()
         except Exception as e:
             logger.error(f"[TSHTeamBattleWidget] Error applying Nexus data: {e}")
         finally:
+            self._syncing_stocks = 0
             StateManager.ReleaseSaving()
