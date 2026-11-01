@@ -27,20 +27,51 @@ class NexusRoomClient(QObject):
         self.stream_url = None
         self.snapshot_url = None
 
+    @staticmethod
+    def is_valid_nexus_host(netloc: str) -> bool:
+        """Validate host is thenexus.gg, a subdomain (e.g. qa.thenexus.gg), or localhost."""
+        if not netloc:
+            return False
+        host = netloc.split(":")[0].lower()
+        if host in ("localhost", "127.0.0.1"):
+            return True
+        if host == "thenexus.gg" or host.endswith(".thenexus.gg"):
+            return True
+        return False
+
     def parse_url(self, raw_url: str):
         raw_url = raw_url.strip()
+        if not raw_url:
+            raise ValueError("URL cannot be empty.")
+
+        # Ensure scheme is present for urlparse
+        if not re.match(r"^[a-zA-Z]+://", raw_url):
+            if raw_url.startswith("localhost") or raw_url.startswith("127.0.0.1"):
+                raw_url = "http://" + raw_url
+            else:
+                raw_url = "https://" + raw_url
+
         parsed = urlparse(raw_url)
         scheme = parsed.scheme or "https"
-        netloc = parsed.netloc or "thenexus.gg"
-        origin = f"{scheme}://{netloc}"
+        netloc = parsed.netloc
 
+        if not self.is_valid_nexus_host(netloc):
+            raise ValueError(
+                f'Invalid host "{netloc}". URL must be from thenexus.gg, qa.thenexus.gg, or localhost.'
+            )
+
+        origin = f"{scheme}://{netloc}"
         query = parse_qs(parsed.query)
         token = query.get("token", [None])[0]
 
-        # Extract slug from path: e.g. /matches/slug-123/live or /api/live-match/slug-123
+        # Extract slug from path: e.g. /matches/slug-123/live or /api/live-match/slug-123 or /room/slug-123
         path = parsed.path.strip("/")
-        match = re.search(r'(?:matches|live-match|room)/([^/]+)', path)
-        slug = match.group(1) if match else path.split("/")[-1]
+        match = re.search(r"(?:matches|live-match|room)/([^/?#]+)", path)
+        if not match:
+            raise ValueError(
+                "Could not find match slug in URL. Expected path containing /matches/<slug> or /room/<slug>."
+            )
+        slug = match.group(1)
 
         return origin, slug, token
 
@@ -50,13 +81,17 @@ class NexusRoomClient(QObject):
         try:
             origin, slug, token = self.parse_url(raw_url)
         except Exception as e:
-            logger.error(f"[NexusRoomClient] Failed to parse URL '{raw_url}': {e}")
-            self.signals.error_occurred.emit(f"Invalid Nexus URL: {e}")
-            return False
+            err_msg = str(e)
+            logger.error(f"[NexusRoomClient] Failed to parse URL '{raw_url}': {err_msg}")
+            self.signals.error_occurred.emit(err_msg)
+            self.signals.connection_status_changed.emit(False, "Invalid URL")
+            return False, err_msg
 
         if not slug:
-            self.signals.error_occurred.emit("Could not find match slug in URL.")
-            return False
+            err_msg = "Could not find match slug in URL."
+            self.signals.error_occurred.emit(err_msg)
+            self.signals.connection_status_changed.emit(False, "Missing Slug")
+            return False, err_msg
 
         self.slug = slug
         self.token = token
@@ -69,7 +104,7 @@ class NexusRoomClient(QObject):
             target=self._stream_worker, daemon=True, name=f"NexusStream-{slug}"
         )
         self.worker_thread.start()
-        return True
+        return True, ""
 
     def disconnect(self):
         self.is_running = False
@@ -130,12 +165,34 @@ class NexusRoomClient(QObject):
                         self.is_running = False
                         break
 
+                    if resp.status_code == 404:
+                        self.signals.error_occurred.emit(
+                            f"Match room '{self.slug}' not found on server (HTTP 404)."
+                        )
+                        self.signals.connection_status_changed.emit(
+                            False, "Room Not Found (404)"
+                        )
+                        self.is_running = False
+                        break
+
                     if resp.status_code != 200:
                         self.signals.connection_status_changed.emit(
                             False, f"HTTP {resp.status_code}"
                         )
                         time.sleep(3)
                         continue
+
+                    # Validate that response is an event-stream
+                    content_type = resp.headers.get("Content-Type", "").lower()
+                    if "text/event-stream" not in content_type:
+                        err = f"Expected text/event-stream but got '{content_type}'."
+                        logger.warning(f"[NexusRoomClient] {err} Aborting stream.")
+                        self.signals.error_occurred.emit(err)
+                        self.signals.connection_status_changed.emit(
+                            False, "Invalid Stream (Not SSE)"
+                        )
+                        self.is_running = False
+                        break
 
                     self.signals.connection_status_changed.emit(
                         True, f"Connected ({self.slug})"

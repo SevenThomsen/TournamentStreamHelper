@@ -19,6 +19,13 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(slug, "grand-finals-crew")
         self.assertEqual(token, "signed_token_123")
 
+    def test_parse_url_qa_subdomain(self):
+        url = "https://qa.thenexus.gg/matches/qa-crew-battle/live?token=qa_token"
+        origin, slug, token = self.client.parse_url(url)
+        self.assertEqual(origin, "https://qa.thenexus.gg")
+        self.assertEqual(slug, "qa-crew-battle")
+        self.assertEqual(token, "qa_token")
+
     def test_parse_url_api_endpoint(self):
         url = "http://localhost:3000/api/live-match/showmatch-crew-4v4/stream?token=xyz_999"
         origin, slug, token = self.client.parse_url(url)
@@ -33,12 +40,52 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(slug, "crew-battle-alpha")
         self.assertIsNone(token)
 
+    def test_parse_url_no_scheme(self):
+        url = "qa.thenexus.gg/matches/no-scheme-match"
+        origin, slug, token = self.client.parse_url(url)
+        self.assertEqual(origin, "https://qa.thenexus.gg")
+        self.assertEqual(slug, "no-scheme-match")
+
+        url_local = "localhost:3000/matches/local-match"
+        origin_l, slug_l, token_l = self.client.parse_url(url_local)
+        self.assertEqual(origin_l, "http://localhost:3000")
+        self.assertEqual(slug_l, "local-match")
+
     def test_parse_url_whitespace_handling(self):
         url = "   https://thenexus.gg/matches/clean-slug/live?token=tok   \n"
         origin, slug, token = self.client.parse_url(url)
         self.assertEqual(origin, "https://thenexus.gg")
         self.assertEqual(slug, "clean-slug")
         self.assertEqual(token, "tok")
+
+    def test_parse_url_rejects_x_com(self):
+        url = "https://x.com/2113696815728251063"
+        with self.assertRaises(ValueError) as ctx:
+            self.client.parse_url(url)
+        self.assertIn("Invalid host", str(ctx.exception))
+        self.assertIn("thenexus.gg", str(ctx.exception))
+
+    def test_parse_url_rejects_arbitrary_domains(self):
+        for bad_url in [
+            "https://google.com/matches/test",
+            "https://not-thenexus.gg/matches/test",
+            "https://fake-thenexus.gg/matches/test",
+        ]:
+            with self.subTest(bad_url=bad_url):
+                with self.assertRaises(ValueError):
+                    self.client.parse_url(bad_url)
+
+    def test_parse_url_rejects_missing_slug(self):
+        with self.assertRaises(ValueError):
+            self.client.parse_url("https://thenexus.gg/")
+        with self.assertRaises(ValueError):
+            self.client.parse_url("https://thenexus.gg/about")
+
+    def test_connect_url_validation_failure(self):
+        success, err = self.client.connect_url("https://x.com/something")
+        self.assertFalse(success)
+        self.assertTrue(len(err) > 0)
+        self.assertFalse(self.client.is_running)
 
     def test_sse_event_parsing_and_emission(self):
         received_payloads = []

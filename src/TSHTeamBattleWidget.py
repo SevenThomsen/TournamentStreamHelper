@@ -216,6 +216,8 @@ class TSHTeamBattleWidget(QDockWidget):
         self.btNexus = QPushButton(QApplication.translate("app", "Nexus Live"))
         self.btNexus.setObjectName("btNexusLive")
         self.btNexus.setFixedHeight(24)
+        self.btNexus.setIcon(QIcon(TSHResolve("assets/icons/nexus.svg")))
+        self.btNexus.setIconSize(QSize(16, 16))
         self.btNexus.clicked.connect(self.PromptNexusLink)
         nexusLayout.addWidget(self.btNexus)
 
@@ -568,7 +570,13 @@ class TSHTeamBattleWidget(QDockWidget):
             ""
         )
         if ok and text.strip():
-            self.nexusClient.connect_url(text.strip())
+            success, err_msg = self.nexusClient.connect_url(text.strip())
+            if not success:
+                QMessageBox.warning(
+                    self,
+                    QApplication.translate("app", "Invalid Nexus URL"),
+                    err_msg or QApplication.translate("app", "The provided URL is not a valid Nexus match room.")
+                )
 
     def OnNexusStatusChanged(self, connected: bool, message: str):
         if connected:
@@ -586,7 +594,8 @@ class TSHTeamBattleWidget(QDockWidget):
 
     def OnNexusError(self, error: str):
         logger.error(f"[TSHTeamBattleWidget] Nexus error: {error}")
-        QMessageBox.warning(self, QApplication.translate("app", "Nexus Error"), error)
+        self.lblNexusStatus.setText(f"🔴 {error[:25]}..." if len(error) > 25 else f"🔴 {error}")
+        self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #ef4444;")
 
     def ApplyNexusData(self, snapshot: dict):
         try:
