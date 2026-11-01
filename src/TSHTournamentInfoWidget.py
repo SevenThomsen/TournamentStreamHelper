@@ -19,6 +19,8 @@ class TSHTournamentInfoWidget(QDockWidget):
         super().__init__(*args)
 
         uic.loadUi(TSHResolve("src/layout/TSHTournamentInfo.ui"), self)
+        if self.findChild(QWidget, "dockWidgetContents") and self.findChild(QWidget, "dockWidgetContents").layout():
+            self.findChild(QWidget, "dockWidgetContents").layout().setContentsMargins(10, 10, 10, 10)
 
         TSHTournamentDataProvider.instance.signals.tournament_data_updated.connect(
             self.UpdateData)

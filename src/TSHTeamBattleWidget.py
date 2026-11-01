@@ -74,17 +74,17 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.playerNumber = QSpinBox()
         self.playerNumber.setObjectName("playerNumber")
-        self.playerNumber.setFixedWidth(50)
+        self.playerNumber.setFixedWidth(58)
         self.playerNumber.valueChanged.connect(
             lambda val: self.SetPlayersPerTeam(val))
 
         self.characterNumber = QSpinBox()
-        self.characterNumber.setFixedWidth(50)
+        self.characterNumber.setFixedWidth(58)
         self.characterNumber.valueChanged.connect(self.SetCharacterNumber)
 
         self.lifeLabel = QLabel(QApplication.translate("app", "Stocks"))
         self.livesNumber = QSpinBox()
-        self.livesNumber.setFixedWidth(50)
+        self.livesNumber.setFixedWidth(58)
         self.livesNumber.valueChanged.connect(self.SetSpinnerForPlayers)
         self.livesNumber.valueChanged.connect(self.TotalScoreExport)
 
@@ -220,6 +220,11 @@ class TSHTeamBattleWidget(QDockWidget):
         self.team1column = uic.loadUi(TSHResolve("src/layout/TSHBattleTeam.ui"))
         self.team1column.setSizePolicy(
             QSizePolicy.Preferred, QSizePolicy.Preferred)
+        if self.team1column.findChild(QScrollArea):
+            sa1 = self.team1column.findChild(QScrollArea)
+            sa1.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            if sa1.widget() and sa1.widget().layout():
+                sa1.widget().layout().setContentsMargins(0, 0, 8, 0)
         self.team1column.findChild(QLineEdit, "teamName").editingFinished.connect(self.Team1SponsorExport)
         DEFAULT_TEAM1_COLOR = SettingsManager.Get("general.team_1_default_color", "#fe3636")
         self.colorButton1 = TSHColorButton(color=DEFAULT_TEAM1_COLOR, ignore_same_color=False)
@@ -236,6 +241,11 @@ class TSHTeamBattleWidget(QDockWidget):
         self.team2column = uic.loadUi(TSHResolve("src/layout/TSHBattleTeam.ui"))
         self.team2column.setSizePolicy(
             QSizePolicy.Preferred, QSizePolicy.Preferred)
+        if self.team2column.findChild(QScrollArea):
+            sa2 = self.team2column.findChild(QScrollArea)
+            sa2.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            if sa2.widget() and sa2.widget().layout():
+                sa2.widget().layout().setContentsMargins(0, 0, 8, 0)
         self.team2column.findChild(QLineEdit, "teamName").editingFinished.connect(self.Team2SponsorExport)
         DEFAULT_TEAM2_COLOR = SettingsManager.Get("general.team_2_default_color", "#2e89ff")
         self.colorButton2 = TSHColorButton(color=DEFAULT_TEAM2_COLOR, ignore_same_color=False)

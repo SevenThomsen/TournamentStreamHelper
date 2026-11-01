@@ -57,8 +57,8 @@ class TSHCommentaryWidget(QDockWidget):
         
         self.eyeBt = QToolButton()
         self.eyeBt.setIcon(QIcon('assets/icons/eye.svg'))
-        self.eyeBt.setSizePolicy(
-            QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.eyeBt.setFixedSize(24, 24)
+        self.eyeBt.setIconSize(QSize(16, 16))
         col.layout().addWidget(self.eyeBt, Qt.AlignmentFlag.AlignRight)
         self.eyeBt.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu()

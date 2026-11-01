@@ -1,3 +1,4 @@
+from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 from ..TSHColorButton import TSHColorButton
 from ..SettingsManager import SettingsManager
@@ -9,25 +10,45 @@ class SettingsWidget(QWidget):
         super().__init__()
 
         self.settingsBase = settingsBase
+        self.settingsCount = 0
 
-        # Create a layout for the widget and add the label
+        # Create a layout for the widget
         layout = QGridLayout()
-        layout.setSizeConstraint(QLayout.SizeConstraint.SetMaximumSize)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        layout.setVerticalSpacing(4)
+        layout.setHorizontalSpacing(16)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # Set the layout for the widget
         self.setLayout(layout)
+        layout.setRowStretch(0, 1)
 
         for setting in settings:
             self.AddSetting(*setting)
 
     def AddSetting(self, name: str, setting: str, type: str, defaultValue, callback=lambda: None, tooltip=None):
-        lastRow = self.layout().rowCount()
+        row = self.settingsCount
+        self.settingsCount += 1
 
-        self.layout().addWidget(QLabel(name), lastRow, 0)
+        # Background banding frame
+        bg = QFrame()
+        bg.setObjectName("settingsRowBand")
+        bg.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        if row % 2 == 0:
+            bg.setStyleSheet("background-color: #1a1a20; border-radius: 6px;")
+        else:
+            bg.setStyleSheet("background-color: transparent; border-radius: 6px;")
+        self.layout().addWidget(bg, row, 0, 1, 3)
+        bg.lower()
+
+        lbl = QLabel(name)
+        lbl.setStyleSheet("padding-left: 10px; background: transparent;")
+        self.layout().addWidget(lbl, row, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
         resetButton = QPushButton(
             QApplication.translate("settings", "Default"))
-        resetButton.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        resetButton.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
+        resetButton.setStyleSheet("margin-right: 8px;")
 
         if type == "checkbox":
             settingWidget = QCheckBox()
@@ -39,6 +60,7 @@ class SettingsWidget(QWidget):
                 lambda bt=None, settingWidget=settingWidget:
                 settingWidget.setChecked(defaultValue)
             )
+            self.layout().addWidget(settingWidget, row, 1, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         elif type == "spinbox":
             settingWidget = QSpinBox()
             settingWidget.setMinimum(1)
@@ -51,6 +73,7 @@ class SettingsWidget(QWidget):
                 lambda bt=None, settingWidget=settingWidget:
                 settingWidget.setValue(defaultValue)
             )
+            self.layout().addWidget(settingWidget, row, 1, Qt.AlignmentFlag.AlignVCenter)
         elif type == "hotkey":
             settingWidget = QKeySequenceEdit()
             settingWidget.keySequenceChanged.connect(
@@ -73,6 +96,7 @@ class SettingsWidget(QWidget):
                     self.CheckCallable(callback)
                 ]
             )
+            self.layout().addWidget(settingWidget, row, 1, Qt.AlignmentFlag.AlignVCenter)
         elif type == "textbox" or type == "password":
             settingWidget = QLineEdit()
             if type == "password":
@@ -87,8 +111,10 @@ class SettingsWidget(QWidget):
                     self.CheckCallable(callback)
                 ]
             )
+            self.layout().addWidget(settingWidget, row, 1, Qt.AlignmentFlag.AlignVCenter)
         elif type == "color":
             settingWidget = TSHColorButton(color=SettingsManager.Get(self.settingsBase+"."+setting, defaultValue), disable_right_click=True)
+            settingWidget.setFixedSize(24, 24)
             settingWidget.colorChanged.connect(
                 lambda val=None: SettingsManager.Set(self.settingsBase+"."+setting, settingWidget.color()))
             resetButton.clicked.connect(
@@ -97,13 +123,16 @@ class SettingsWidget(QWidget):
                     self.CheckCallable(callback)
                 ]
             )
-        
+            self.layout().addWidget(settingWidget, row, 1, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+
         if tooltip:
             settingWidget.setToolTip('\n'.join(textwrap.wrap(tooltip, 40)))
 
-        self.layout().addWidget(settingWidget, lastRow, 1)
-        self.layout().addWidget(resetButton, lastRow, 2)
-    
+        self.layout().addWidget(resetButton, row, 2, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        self.layout().setRowMinimumHeight(row, 38)
+        self.layout().setRowStretch(row, 0)
+        self.layout().setRowStretch(row + 1, 1)
+
     def CheckCallable(self, callback):
         if callable(callback):
             return callback()

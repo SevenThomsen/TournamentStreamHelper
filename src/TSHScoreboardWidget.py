@@ -215,8 +215,8 @@ class TSHScoreboardWidget(QWidget):
 
         self.eyeBt = QToolButton()
         self.eyeBt.setIcon(QIcon('assets/icons/eye.svg'))
-        self.eyeBt.setSizePolicy(
-            QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.eyeBt.setFixedSize(24, 24)
+        self.eyeBt.setIconSize(QSize(16, 16))
         col.layout().addWidget(self.eyeBt, Qt.AlignmentFlag.AlignRight)
         self.eyeBt.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu()
@@ -387,9 +387,14 @@ class TSHScoreboardWidget(QWidget):
             )
 
         self.team1column.findChild(QHBoxLayout, "horizontalLayout_2").layout().insertWidget(0, colorGroup1)
-        self.team1column.findChild(QScrollArea).setWidget(QWidget())
-        self.team1column.findChild(
-            QScrollArea).widget().setLayout(QVBoxLayout())
+        sa1 = self.team1column.findChild(QScrollArea)
+        sa1.setFrameShape(QFrame.Shape.NoFrame)
+        sa1.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sa1_widget = QWidget()
+        sa1_layout = QVBoxLayout(sa1_widget)
+        sa1_layout.setContentsMargins(0, 0, 8, 0)
+        sa1_layout.setSpacing(16)
+        sa1.setWidget(sa1_widget)
 
         for c in self.team1column.findChildren(QLineEdit):
             c.editingFinished.connect(
@@ -448,10 +453,14 @@ class TSHScoreboardWidget(QWidget):
         )
 
         self.team2column.findChild(QHBoxLayout, "horizontalLayout_2").layout().insertWidget(0, colorGroup2)
-
-        self.team2column.findChild(QScrollArea).setWidget(QWidget())
-        self.team2column.findChild(
-            QScrollArea).widget().setLayout(QVBoxLayout())
+        sa2 = self.team2column.findChild(QScrollArea)
+        sa2.setFrameShape(QFrame.Shape.NoFrame)
+        sa2.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sa2_widget = QWidget()
+        sa2_layout = QVBoxLayout(sa2_widget)
+        sa2_layout.setContentsMargins(0, 0, 8, 0)
+        sa2_layout.setSpacing(16)
+        sa2.setWidget(sa2_widget)
 
         for c in self.team2column.findChildren(QLineEdit):
             c.editingFinished.connect(

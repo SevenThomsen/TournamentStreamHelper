@@ -8,6 +8,7 @@ import faulthandler
 import shutil
 import zipfile
 import qdarktheme
+from .TSHTheme import ApplyTheme
 import requests
 import json
 import orjson
@@ -405,6 +406,7 @@ class Window(QMainWindow):
         if not SettingsManager.Get("general.disable_thumbnail_widget", False):
             from .TSHThumbnailSettingsWidget import TSHThumbnailSettingsWidget
             thumbnailSetting = TSHThumbnailSettingsWidget()
+            thumbnailSetting.setWindowIcon(QIcon('assets/icons/png_file.svg'))
             thumbnailSetting.setObjectName(
                 QApplication.translate("app", "Thumbnail Settings"))
             self.addDockWidget(
@@ -412,7 +414,7 @@ class Window(QMainWindow):
             self.dockWidgets.append(thumbnailSetting)
 
         bracket = TSHBracketWidget()
-        bracket.setWindowIcon(QIcon('assets/icons/info.svg'))
+        bracket.setWindowIcon(QIcon('assets/icons/bracket.svg'))
         bracket.setObjectName(
             QApplication.translate("app", "Bracket"))
         self.addDockWidget(
@@ -428,7 +430,7 @@ class Window(QMainWindow):
         self.dockWidgets.append(tournamentInfo)
 
         teamBattle = TSHTeamBattleWidget()
-        teamBattle.setWindowIcon(QIcon('assets/icons/info.svg'))
+        teamBattle.setWindowIcon(QIcon('assets/icons/swords.svg'))
         teamBattle.setObjectName(
             add_beta_label(QApplication.translate("app", "Crew/Team Battle"), "team_battle"))
         self.addDockWidget(
@@ -436,7 +438,7 @@ class Window(QMainWindow):
         self.dockWidgets.append(teamBattle)
 
         self.scoreboard = TSHScoreboardManager.instance
-        self.scoreboard.setWindowIcon(QIcon('assets/icons/list.svg'))
+        self.scoreboard.setWindowIcon(QIcon('assets/icons/scoreboard.svg'))
         self.scoreboard.setObjectName(
             QApplication.translate("app", "Scoreboard Manager"))
         self.addDockWidget(
@@ -466,12 +468,13 @@ class Window(QMainWindow):
         self.stageWidget.stageStrikeLogic.signals.state_updated.connect(self.webserver.ws_ruleset)
 
         playerList = TSHPlayerListWidget()
-        playerList.setWindowIcon(QIcon('assets/icons/list.svg'))
+        playerList.setWindowIcon(QIcon('assets/icons/people.svg'))
         playerList.setObjectName(QApplication.translate("app", "Player List"))
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, playerList)
         self.dockWidgets.append(playerList)
         
         notes = TSHNotesWidget()
+        notes.setWindowIcon(QIcon('assets/icons/notes.svg'))
         notes.setObjectName(QApplication.translate("app", "Additional Notes"))
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, notes)
         self.dockWidgets.append(notes)
@@ -491,17 +494,23 @@ class Window(QMainWindow):
         base_layout = QHBoxLayout()
 
         group_box = QWidget()
-        group_box.setLayout(QVBoxLayout())
+        gb_layout = QVBoxLayout()
+        gb_layout.setContentsMargins(0, 0, 0, 0)
+        gb_layout.setSpacing(3)
+        group_box.setLayout(gb_layout)
         group_box.setSizePolicy(
             QSizePolicy.Minimum, QSizePolicy.Maximum)
         base_layout.layout().addWidget(group_box)
 
         # Set tournament
         hbox = QHBoxLayout()
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(4)
         group_box.layout().addLayout(hbox)
 
         self.setTournamentBt = QPushButton(
             QApplication.translate("app", "Set tournament"))
+        self.setTournamentBt.setObjectName("setTournamentBt")
         hbox.addWidget(self.setTournamentBt)
         self.setTournamentBt.clicked.connect(
             lambda bt=None, s=self: TSHTournamentDataProvider.instance.SetStartggEventSlug(s))
@@ -522,6 +531,7 @@ class Window(QMainWindow):
 
             self.btLoadPlayerSet = QPushButton(
                 QApplication.translate("app", "Load tournament and sets from StartGG user"))
+            self.btLoadPlayerSet.setObjectName("btLoadPlayerSet")
             self.btLoadPlayerSet.setIcon(QIcon("./assets/icons/startgg.svg"))
             self.btLoadPlayerSet.clicked.connect(self.LoadUserSetClicked)
             self.btLoadPlayerSet.setIcon(QIcon("./assets/icons/startgg.svg"))
@@ -548,6 +558,7 @@ class Window(QMainWindow):
         group_box.layout().addLayout(hbox)
         self.btPullCompletedSets = QPushButton(
             QApplication.translate("app", "Pull Latest Completed Sets from StartGG"))
+        self.btPullCompletedSets.setObjectName("btPullCompletedSets")
         self.btPullCompletedSets.setIcon(QIcon("./assets/icons/startgg.svg"))
         self.btPullCompletedSets.clicked.connect(TSHTournamentDataProvider.instance.GetCompletedSets)
         hbox.addWidget(self.btPullCompletedSets)
@@ -1260,18 +1271,11 @@ class Window(QMainWindow):
         self.show()
 
     def ToggleLightMode(self, checked):
-        if checked:
-            qdarktheme.setup_theme("light")
-        else:
-            qdarktheme.setup_theme()
-
+        ApplyTheme(is_light=checked)
         SettingsManager.Set("light_mode", checked)
 
     def LoadTheme(self):
-        if SettingsManager.Get("light_mode", False):
-            qdarktheme.setup_theme("light")
-        else:
-            qdarktheme.setup_theme()
+        ApplyTheme(is_light=SettingsManager.Get("light_mode", False))
 
     def ToggleTopOption(self):
         if not SettingsManager.Get("general.hide_track_player", False):

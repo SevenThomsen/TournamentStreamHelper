@@ -341,7 +341,7 @@ class TSHSettingsWindow(QDialog):
         self.add_setting_widget(QApplication.translate(
             "settings", "API Keys"), SettingsWidget("api_keys", APIKeySettings))
 
-        self.resize(1000, 500)
+        self.resize(1000, 600)
         QApplication.processEvents()
         splitter.setSizes([200, self.width()-200])
 

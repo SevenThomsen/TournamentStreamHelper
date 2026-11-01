@@ -24,6 +24,7 @@ class TSHColorButton(QToolButton):
         self.enable_alpha_selection = enable_alpha_selection
         self.ignore_same_color = ignore_same_color
         self.pressed.connect(self.onColorPicker)
+        self.setFixedSize(22, 22)
 
         # Set the initial/default state.
         self.setColor(self._default)
@@ -38,7 +39,7 @@ class TSHColorButton(QToolButton):
             self.colorChanged.emit(color)
 
         if self._color:
-            self.setStyleSheet("QToolButton { background-color: %s; }" % self._color)
+            self.setStyleSheet("QToolButton { background-color: %s; border-radius: 4px; border: 1px solid #2e2e33; min-width: 22px; max-width: 22px; min-height: 22px; max-height: 22px; }" % self._color)
         else:
             self.setStyleSheet("")
 

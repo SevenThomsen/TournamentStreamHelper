@@ -39,6 +39,8 @@ class TSHBracketWidget(QDockWidget):
 
     def SetupUi(self):
         uic.loadUi(TSHResolve("src/layout/TSHBracket.ui"), self)
+        if self.findChild(QWidget, "dockWidgetContents") and self.findChild(QWidget, "dockWidgetContents").layout():
+            self.findChild(QWidget, "dockWidgetContents").layout().setContentsMargins(10, 10, 10, 10)
 
         StateManager.Set("bracket", {})
 
