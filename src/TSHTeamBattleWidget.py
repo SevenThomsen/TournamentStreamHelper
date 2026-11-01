@@ -853,7 +853,7 @@ class TSHTeamBattleWidget(QDockWidget):
                 self.MatchExport()
 
             # 5. Set active game (Nexus currently supports SSBU; future-proofed with snapshot game field)
-            game_target = snapshot.get("game") or tournament_season.get("game") or "ssbu"
+            game_target = active_game.get("game") or snapshot.get("game") or tournament_season.get("game") or "ssbu"
             if TSHGameAssetManager.instance:
                 TSHGameAssetManager.instance.SetGame(game_target)
 
