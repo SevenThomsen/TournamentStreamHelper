@@ -850,15 +850,22 @@ class TSHTeamBattleWidget(QDockWidget):
             selections_by_player = {s.get("player_id"): s for s in roster_selections if s.get("player_id")}
             blind_by_player = {bp.get("player_id"): bp for bp in blind_picks if bp.get("player_id")}
 
+            active_home_id = live_state.get("home_active_player_id")
+            active_away_id = live_state.get("away_active_player_id")
+
+            # Dual-layer protection: During starter selection (round 1), do not show either starter until both are locked in
+            if live_state.get("round_number") == 1 and (not active_home_id or not active_away_id):
+                active_home_id = None
+                active_away_id = None
+                roster_selections = [s for s in roster_selections if s.get("slot_order") != 1]
+                selections_by_player = {s.get("player_id"): s for s in roster_selections if s.get("player_id")}
+
             def sort_key(p):
                 sel = selections_by_player.get(p.get("id"), {})
                 return sel.get("slot_order", 999)
 
             home_players.sort(key=sort_key)
             away_players.sort(key=sort_key)
-
-            active_home_id = live_state.get("home_active_player_id")
-            active_away_id = live_state.get("away_active_player_id")
 
             # 5. Populate Team 1 & Team 2 Player Widgets
             home_round_start = live_state.get("home_round_start_stocks")
@@ -885,9 +892,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
                         char_name = None
                         if p_id in selections_by_player:
-                            char_name = selections_by_player[p_id].get("selected_character")
-                        elif p_id in blind_by_player:
-                            char_name = blind_by_player[p_id].get("character")
+                            char_name = selections_by_player[p_id].get("selected_character") or selections_by_player[p_id].get("character")
 
                         player_data = {
                             "gamerTag": tag,
@@ -920,6 +925,21 @@ class TSHTeamBattleWidget(QDockWidget):
                             pw.dynamicSpinner.setValue(stk_default)
                             pw.SetEliminatedStatus(False)
                             pw._previous_stock = stk_default
+
+            # Save double blind picks to StateManager for dedicated stream overlays / scenes
+            StateManager.Set("team_battle.blind_picks", blind_picks)
+            home_team_id = home_team.get("id")
+            away_team_id = away_team.get("id")
+            team1_blind_picks = [
+                bp for bp in blind_picks
+                if bp.get("team_id") == home_team_id or bp.get("side") == "home" or bp.get("team_side") == "home"
+            ]
+            team2_blind_picks = [
+                bp for bp in blind_picks
+                if bp.get("team_id") == away_team_id or bp.get("side") == "away" or bp.get("team_side") == "away"
+            ]
+            StateManager.Set("team_battle.team.1.blind_picks", team1_blind_picks)
+            StateManager.Set("team_battle.team.2.blind_picks", team2_blind_picks)
 
             self.TotalScoreExport()
         except Exception as e:
