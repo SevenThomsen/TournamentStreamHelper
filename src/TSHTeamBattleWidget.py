@@ -14,6 +14,7 @@ from .TSHTeamPlayerWidget import TSHTeamPlayerWidget
 from .TSHColorButton import TSHColorButton
 
 from .TournamentDataProvider.NexusRoomClient import NexusRoomClient
+from .TSHGameAssetManager import TSHGameAssetManager
 from.Helpers.TSHLocaleHelper import TSHLocaleHelper
 from .Helpers.TSHVersionHelper import add_beta_label
 
@@ -718,6 +719,11 @@ class TSHTeamBattleWidget(QDockWidget):
             if self.matchCombo.currentText() != match_title:
                 self.matchCombo.setCurrentText(match_title)
                 self.MatchExport()
+
+            # 5. Set active game (Nexus currently supports SSBU; future-proofed with snapshot game field)
+            game_target = snapshot.get("game") or tournament_season.get("game") or "ssbu"
+            if TSHGameAssetManager.instance:
+                TSHGameAssetManager.instance.SetGame(game_target)
 
             # Selections & Characters
             selections_by_player = {s.get("player_id"): s for s in roster_selections if s.get("player_id")}
