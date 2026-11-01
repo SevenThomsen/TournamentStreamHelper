@@ -101,6 +101,35 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(received_payloads[0]["match_id"], 42)
         self.assertEqual(received_payloads[0]["active_duelist_id"], 101)
 
+    def test_disconnect_cleans_up_resources(self):
+        class MockRaw:
+            def __init__(self):
+                self.closed = False
+            def close(self):
+                self.closed = True
+
+        class MockResponse:
+            def __init__(self):
+                self.closed = False
+                self.raw = MockRaw()
+            def close(self):
+                self.closed = True
+
+        mock_resp = MockResponse()
+        self.client.current_response = mock_resp
+        self.client.is_running = True
+        self.client.slug = "test-slug"
+        self.client.token = "test-token"
+
+        self.client.disconnect()
+
+        self.assertFalse(self.client.is_running)
+        self.assertTrue(mock_resp.closed)
+        self.assertTrue(mock_resp.raw.closed)
+        self.assertIsNone(self.client.current_response)
+        self.assertIsNone(self.client.slug)
+        self.assertIsNone(self.client.token)
+
 
 if __name__ == "__main__":
     unittest.main()

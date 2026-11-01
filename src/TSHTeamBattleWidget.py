@@ -305,6 +305,10 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.nexusClient.signals.error_occurred.connect(self.OnNexusError)
 
+        app = QApplication.instance()
+        if app:
+            app.aboutToQuit.connect(self.nexusClient.disconnect)
+
         self.signals.team1_stock_up.connect(self.T1_Stock_Up)
         self.signals.team1_stock_down.connect(self.T1_Stock_Down)
         self.signals.team2_stock_up.connect(self.T2_Stock_Up)

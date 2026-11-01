@@ -22,6 +22,7 @@ class NexusRoomClient(QObject):
         self.is_running = False
         self.worker_thread = None
         self.current_session = None
+        self.current_response = None
         self.slug = None
         self.token = None
         self.stream_url = None
@@ -108,6 +109,18 @@ class NexusRoomClient(QObject):
 
     def disconnect(self):
         self.is_running = False
+
+        # 1. Forcibly close active HTTP streaming response to unblock reading socket
+        if self.current_response:
+            try:
+                self.current_response.close()
+                if hasattr(self.current_response, "raw") and self.current_response.raw:
+                    self.current_response.raw.close()
+            except Exception:
+                pass
+            self.current_response = None
+
+        # 2. Close session adapter pool
         if self.current_session:
             try:
                 self.current_session.close()
@@ -115,7 +128,10 @@ class NexusRoomClient(QObject):
                 pass
             self.current_session = None
 
+        # 3. Wait for worker thread to terminate cleanly
         if self.worker_thread and self.worker_thread.is_alive():
+            if threading.current_thread() != self.worker_thread:
+                self.worker_thread.join(timeout=1.0)
             self.worker_thread = None
 
         self.slug = None
@@ -155,6 +171,7 @@ class NexusRoomClient(QObject):
                     timeout=(10, 60),
                     headers={"Accept": "text/event-stream"},
                 ) as resp:
+                    self.current_response = resp
                     if resp.status_code == 401:
                         self.signals.error_occurred.emit(
                             "Unauthorized: Invalid or expired Nexus stream token."
@@ -198,23 +215,26 @@ class NexusRoomClient(QObject):
                         True, f"Connected ({self.slug})"
                     )
 
-                    for raw_line in resp.iter_lines(decode_unicode=True):
-                        if not self.is_running:
-                            break
+                    try:
+                        for raw_line in resp.iter_lines(decode_unicode=True):
+                            if not self.is_running:
+                                break
 
-                        if not raw_line:
-                            continue
+                            if not raw_line:
+                                continue
 
-                        line = raw_line.strip()
-                        if line.startswith("data:"):
-                            payload_str = line[5:].strip()
-                            try:
-                                payload = json.loads(payload_str)
-                                self.signals.room_updated.emit(payload)
-                            except Exception as parse_err:
-                                logger.error(
-                                    f"[NexusRoomClient] JSON parse error: {parse_err}"
-                                )
+                            line = raw_line.strip()
+                            if line.startswith("data:"):
+                                payload_str = line[5:].strip()
+                                try:
+                                    payload = json.loads(payload_str)
+                                    self.signals.room_updated.emit(payload)
+                                except Exception as parse_err:
+                                    logger.error(
+                                        f"[NexusRoomClient] JSON parse error: {parse_err}"
+                                    )
+                    finally:
+                        self.current_response = None
 
             except Exception as e:
                 if not self.is_running:
