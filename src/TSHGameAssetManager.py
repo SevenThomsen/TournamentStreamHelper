@@ -51,6 +51,7 @@ class TSHGameAssetManager(QObject):
         self.workers = []
 
         self.skinLoaderLock = QMutex()
+        self._pending_game = None
 
     def UiMounted(self):
         self.DownloadStartGGCharacters()
@@ -180,9 +181,48 @@ class TSHGameAssetManager(QObject):
                             logger.info("Game config for "+game+" doesn't exist.")
                     # print(self.parent().games)
                     self.parent().signals.onLoadAssets.emit()
+                    if getattr(self.parent(), '_pending_game', None):
+                        pending = self.parent()._pending_game
+                        self.parent()._pending_game = None
+                        self.parent().SetGame(pending)
 
         gameLoaderThread = GameLoaderThread(self)
         gameLoaderThread.start()
+
+    def SetGame(self, game_identifier):
+        if not game_identifier:
+            return
+
+        if len(self.games.keys()) == 0:
+            self._pending_game = game_identifier
+            return
+
+        target = str(game_identifier).strip().lower()
+
+        current_codename = str(self.selectedGame.get("codename", "")).strip().lower()
+        if current_codename and current_codename == target:
+            return
+
+        for i, (key, game) in enumerate(self.games.items()):
+            k = str(key).strip().lower()
+            codename = str(game.get("codename", key)).strip().lower()
+            smashgg_id = str(game.get("smashgg_game_id", "")).strip().lower()
+            igdb_id = str(game.get("igdb_game_id", "")).strip().lower()
+            name = str(game.get("name", "")).strip().lower()
+
+            matches = (
+                target in (k, codename, smashgg_id, igdb_id) or
+                (target in ("ssbu", "ultimate") and ("smash" in name and "ultimate" in name)) or
+                (target == "melee" and ("smash" in name and "melee" in name)) or
+                (target in name)
+            )
+
+            if matches:
+                if current_codename and (current_codename == codename or current_codename == k):
+                    return
+                logger.info(f"[TSHGameAssetManager] Auto-selecting game '{key}' for target '{game_identifier}' (index {i+1})")
+                self.LoadGameAssets(i+1)
+                return
 
     def SetGameFromStartGGId(self, gameid):
         if len(self.games.keys()) == 0:

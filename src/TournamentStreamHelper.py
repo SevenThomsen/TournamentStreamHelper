@@ -971,6 +971,8 @@ class Window(QMainWindow):
             "name") or self.gameSelect.itemText(i) == TSHGameAssetManager.instance.selectedGame.get("codename")), None)
         if index is not None:
             self.gameSelect.setCurrentIndex(index)
+            if self.gameSelect.lineEdit():
+                self.gameSelect.lineEdit().setText(self.gameSelect.itemText(index))
             self.signals.GameChanged.emit()
 
     def Signal_GameChange(self, url):

@@ -52,6 +52,8 @@ class TSHTeamPlayerWidget(QGroupBox):
         uic.loadUi(TSHResolve("src/layout/TSHTeamPlayer.ui"), self)
 
         self.dynamicSpinner = self.findChild(QSpinBox, "dynamicSpinner")
+        if self.dynamicSpinner:
+            self.dynamicSpinner.setStyleSheet("QSpinBox { padding-left: 18px; padding-right: 18px; }")
 
         # custom_textbox_layout = QHBoxLayout()
         # self.custom_textbox = QPlainTextEdit()
@@ -773,7 +775,7 @@ class TSHTeamPlayerWidget(QGroupBox):
                 self.Clear(no_mains=no_mains)
 
             # Load player data from DB; will be overwriten by incoming data
-            if not dontLoadFromDB:
+            if not dontLoadFromDB and TSHPlayerDB.model is not None:
                 tag = data.get(
                     "prefix")+" "+data.get("gamerTag") if data.get("prefix") else data.get("gamerTag")
 

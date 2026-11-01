@@ -69,6 +69,14 @@ def get_dark_theme_qss() -> str:
         letter-spacing: 0.4px;
     }}
 
+    /* Center-aligned Score & Stock Spinners - balanced padding for arrow subcontrols */
+    QSpinBox#score_left, QSpinBox#score_right,
+    QSpinBox#dynamicSpinner,
+    QSpinBox#best_of, QSpinBox#bestOf {{
+        padding-left: 18px;
+        padding-right: 18px;
+    }}
+
     /* Score Column GroupBox - Seamless Folder Tab Title */
     QGroupBox#scoreGroupBox {{
         background-color: {PALETTE["panel"]};

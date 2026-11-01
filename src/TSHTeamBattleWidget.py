@@ -74,17 +74,23 @@ class TSHTeamBattleWidget(QDockWidget):
 
         self.playerNumber = QSpinBox()
         self.playerNumber.setObjectName("playerNumber")
-        self.playerNumber.setFixedWidth(58)
+        self.playerNumber.setFixedWidth(52)
+        self.playerNumber.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.playerNumber.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.playerNumber.valueChanged.connect(
             lambda val: self.SetPlayersPerTeam(val))
 
         self.characterNumber = QSpinBox()
-        self.characterNumber.setFixedWidth(58)
+        self.characterNumber.setFixedWidth(52)
+        self.characterNumber.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.characterNumber.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.characterNumber.valueChanged.connect(self.SetCharacterNumber)
 
         self.lifeLabel = QLabel(QApplication.translate("app", "Stocks"))
         self.livesNumber = QSpinBox()
-        self.livesNumber.setFixedWidth(58)
+        self.livesNumber.setFixedWidth(52)
+        self.livesNumber.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.livesNumber.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.livesNumber.valueChanged.connect(self.SetSpinnerForPlayers)
         self.livesNumber.valueChanged.connect(self.TotalScoreExport)
 
@@ -183,6 +189,7 @@ class TSHTeamBattleWidget(QDockWidget):
         menu.addSection(QApplication.translate("app", "Players"))
 
         self.elements = [
+            [QApplication.translate("app", "Sponsors"),   ["team"],                            "show_sponsors"],
             [QApplication.translate("app", "Twitter"),    ["twitter", "twitterLabel"],           "show_social"],
             [QApplication.translate("app", "Location"),   ["locationLabel", "state", "country"], "show_location"],
             [QApplication.translate("app", "Characters"), ["characters"],                        "show_characters"],
@@ -191,7 +198,8 @@ class TSHTeamBattleWidget(QDockWidget):
         for element in self.elements:
             action: QAction = self.eyeBt.menu().addAction(element[0])
             action.setCheckable(True)
-            action.setChecked(SettingsManager.Get(f"display_options.{element[2]}", True))
+            default_val = False if element[2] == "show_sponsors" else True
+            action.setChecked(SettingsManager.Get(f"display_options.{element[2]}", default_val))
             action.toggled.connect(
                 lambda toggled, action=action, element=element: [
                     self.ToggleElements(action, element[1]),
@@ -233,6 +241,9 @@ class TSHTeamBattleWidget(QDockWidget):
             lambda color: StateManager.Set(f"team_battle.team.{1}.color", color))
         self.colorButton1.setColor(DEFAULT_TEAM1_COLOR)
         self.team1score = QSpinBox()
+        self.team1score.setFixedWidth(52)
+        self.team1score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.team1score.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.team1column.findChild(QHBoxLayout, "team_header").layout().addWidget(self.team1score)
         self.team1score.valueChanged.connect(self.Team1TotalScoreExport)
         self.team1score.valueChanged.emit(0)
@@ -254,6 +265,9 @@ class TSHTeamBattleWidget(QDockWidget):
             lambda color: StateManager.Set(f"team_battle.team.{2}.color", color))
         self.colorButton2.setColor(DEFAULT_TEAM2_COLOR)
         self.team2score = QSpinBox()
+        self.team2score.setFixedWidth(52)
+        self.team2score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.team2score.setStyleSheet("QSpinBox { padding-right: 14px; padding-left: 2px; }")
         self.team2column.findChild(QHBoxLayout, "team_header").layout().addWidget(self.team2score)
         self.team2score.valueChanged.connect(self.Team2TotalScoreExport)
         self.team2score.valueChanged.emit(0)
@@ -264,8 +278,6 @@ class TSHTeamBattleWidget(QDockWidget):
         self.team1score.valueChanged.connect(self.Team1TotalScoreExport)
         self.team2score.valueChanged.connect(self.Team2TotalScoreExport)
 
-        self.team1column.findChild(QCheckBox, "separateSponsors").toggled.connect(self.ToggleSponsorsForTeam1)
-        self.team2column.findChild(QCheckBox, "separateSponsors").toggled.connect(self.ToggleSponsorsForTeam2)
 
         # Hook into Signals for Control
         self.signals.reset_all_stocks.connect(self.ResetAllStocks)
@@ -310,14 +322,6 @@ class TSHTeamBattleWidget(QDockWidget):
             pw.ResetDynamicSpinner()
             pw.Clear()
     
-    def ToggleSponsorsForTeam1(self):
-        for player in self.team1playerWidgets:
-            player.ToggleSponsorDisplay()
-    
-    def ToggleSponsorsForTeam2(self):
-        for player in self.team2playerWidgets:
-            player.ToggleSponsorDisplay()
-    
     def SetSpinnerForPlayers(self):
         for pw in self.playerWidgets:
             pw.SetDefaultSpinnerValue(self.livesNumber.value())
@@ -340,8 +344,6 @@ class TSHTeamBattleWidget(QDockWidget):
             self.team1column.findChild(QScrollArea).widget().layout().addWidget(p)
             p.SetCharactersPerPlayer(self.characterNumber.value())
 
-            if self.team1column.findChild(QCheckBox, "separateSponsors").isChecked():
-                p.ToggleSponsorDisplay()
 
             self.ApplyVisibility(p)
             
@@ -366,8 +368,6 @@ class TSHTeamBattleWidget(QDockWidget):
             self.team2column.findChild(QScrollArea).widget().layout().addWidget(p)
             p.SetCharactersPerPlayer(self.characterNumber.value())
 
-            if self.team2column.findChild(QCheckBox, "separateSponsors").isChecked():
-                p.ToggleSponsorDisplay()
 
             self.ApplyVisibility(p)
             
@@ -411,7 +411,8 @@ class TSHTeamBattleWidget(QDockWidget):
     def ApplyVisibility(self, pw):
         if hasattr(self, "elements"):
             for element in self.elements:
-                visible = SettingsManager.Get(f"display_options.{element[2]}", True)
+                default_val = False if element[2] == "show_sponsors" else True
+                visible = SettingsManager.Get(f"display_options.{element[2]}", default_val)
                 for el in element[1]:
                     w = pw.findChild(QWidget, el)
                     if w:

@@ -507,6 +507,12 @@ class TSHScoreboardWidget(QWidget):
         self.individualGameTracker = TSHIndividualGameTracker(self.scoreboardNumber)
         self.individualGameTracker.signals.stageResultsUpdate.connect(self.StageResultsToScore)
         
+        for sb_name in ["score_left", "score_right", "best_of"]:
+            sp = self.scoreColumn.findChild(QSpinBox, sb_name)
+            if sp:
+                sp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                sp.setStyleSheet("QSpinBox { padding-left: 18px; padding-right: 18px; }")
+
         self.scoreColumn.findChild(QSpinBox, "best_of").valueChanged.connect(
             self.ExportBestOf)
         self.scoreColumn.findChild(QSpinBox, "best_of").valueChanged.emit(0)
