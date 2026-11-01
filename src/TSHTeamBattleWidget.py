@@ -213,7 +213,7 @@ class TSHTeamBattleWidget(QDockWidget):
         nexusLayout.setContentsMargins(0, 0, 0, 0)
         nexusLayout.setSpacing(2)
 
-        self.btNexus = QPushButton(QApplication.translate("app", "Nexus Live"))
+        self.btNexus = QPushButton(QApplication.translate("app", "Load from The Nexus"))
         self.btNexus.setObjectName("btNexusLive")
         self.btNexus.setFixedHeight(24)
         self.btNexus.setIcon(QIcon(TSHResolve("assets/icons/nexus.svg")))
@@ -588,7 +588,7 @@ class TSHTeamBattleWidget(QDockWidget):
             self.lblNexusStatus.setText(f"🟡 {message}")
             self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #facc15;")
         else:
-            self.btNexus.setText(QApplication.translate("app", "Nexus Live"))
+            self.btNexus.setText(QApplication.translate("app", "Load from The Nexus"))
             self.lblNexusStatus.setText(f"⚪ {message}" if message != "Disconnected" else "")
             self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #888888;")
 

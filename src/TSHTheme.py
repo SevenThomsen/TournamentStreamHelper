@@ -578,7 +578,7 @@ def get_dark_theme_qss() -> str:
         color: #1a1921;
         border: 1px solid #43ad66;
         font-weight: 700;
-        padding: 2px 8px;
+        padding: 2px 10px 2px 8px;
     }}
     QPushButton#btNexusLive:hover {{
         background-color: #45b76b;
