@@ -3,6 +3,7 @@ from qtpy.QtWidgets import *
 from qtpy.QtGui import QIcon, QAction
 from qtpy import uic
 from typing import List
+import math
 from loguru import logger
 from .SettingsManager import SettingsManager
 from .StateManager import StateManager
@@ -111,6 +112,14 @@ class TSHTeamBattleWidget(QDockWidget):
         self.matchCombo.addItem("")
         TSHLocaleHelper.LoadMatchNamesToWidget(self.matchCombo)
 
+        self.bestOf = QSpinBox()
+        self.bestOf.setObjectName("bestOf")
+        self.bestOf.setFixedWidth(58)
+        self.bestOf.setMinimum(0)
+        self.bestOf.setMaximum(99)
+        self.bestOf.setValue(3)
+        self.bestOf.valueChanged.connect(self.ExportBestOf)
+
         resetValues = QPushButton(QApplication.translate("app", "Reset Player Mode Values"))
         resetValues.setFixedHeight(24)
         resetValues.clicked.connect(self.ResetAllStocks)
@@ -150,7 +159,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
         rowLayout.addWidget(rulesCol)
 
-        # Group 2: Tournament Info (Phase, Match)
+        # Group 2: Tournament Info (Phase, Best of, Match)
         infoCol = QWidget()
         infoLayout = QGridLayout(infoCol)
         infoLayout.setContentsMargins(0, 0, 0, 0)
@@ -159,11 +168,15 @@ class TSHTeamBattleWidget(QDockWidget):
 
         phaseLabel = QLabel(QApplication.translate("app", "Phase"))
         matchLabel = QLabel(QApplication.translate("app", "Match"))
+        bestOfLabel = QLabel(QApplication.translate("app", "Best of"))
 
         infoLayout.addWidget(phaseLabel, 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         infoLayout.addWidget(self.phaseCombo, 0, 1, Qt.AlignmentFlag.AlignVCenter)
+        infoLayout.addWidget(bestOfLabel, 0, 2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        infoLayout.addWidget(self.bestOf, 0, 3, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
         infoLayout.addWidget(matchLabel, 1, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        infoLayout.addWidget(self.matchCombo, 1, 1, Qt.AlignmentFlag.AlignVCenter)
+        infoLayout.addWidget(self.matchCombo, 1, 1, 1, 3, Qt.AlignmentFlag.AlignVCenter)
 
         rowLayout.addWidget(infoCol)
 
@@ -313,6 +326,8 @@ class TSHTeamBattleWidget(QDockWidget):
         self.signals.team1_stock_down.connect(self.T1_Stock_Down)
         self.signals.team2_stock_up.connect(self.T2_Stock_Up)
         self.signals.team2_stock_down.connect(self.T2_Stock_Down)
+
+        self.ExportBestOf()
         
         self.playerNumber.setValue(1)
         self.characterNumber.setValue(1)
@@ -531,6 +546,21 @@ class TSHTeamBattleWidget(QDockWidget):
     
     def MatchExport(self):
         StateManager.Set("team_battle.match", self.matchCombo.currentText())
+
+    def ExportBestOf(self, value=None):
+        if value is None:
+            value = self.bestOf.value()
+        with StateManager.SaveBlock():
+            StateManager.Set("team_battle.best_of", value)
+            StateManager.Set("team_battle.best_of_short_text", f"BO{value}" if value > 0 else "")
+            best_of_template = TSHLocaleHelper.matchNames.get("best_of", "Best of {0}")
+            best_of_text = best_of_template.format(value) if value > 0 else ""
+            StateManager.Set("team_battle.best_of_text", best_of_text)
+            first_to = math.ceil(value / 2) if value > 0 else 0
+            StateManager.Set("team_battle.first_to", first_to)
+            StateManager.Set("team_battle.first_to_short_text", f"FT{first_to}" if first_to > 0 else "")
+            first_to_template = TSHLocaleHelper.matchNames.get("first_to", "First to {0}")
+            StateManager.Set("team_battle.first_to_text", first_to_template.format(first_to) if first_to > 0 else "")
     
     def TotalScoreExport(self):
         self.Team1TotalScoreExport()
@@ -654,12 +684,34 @@ class TSHTeamBattleWidget(QDockWidget):
             if self.playerNumber.value() != roster_size:
                 self.playerNumber.setValue(roster_size)
 
-            # 4. Tournament Phase & Match Name
+            # 4. Tournament Name, Phase, Best Of & Match Name
             tournament_season = snapshot.get("tournament_season") or {}
+            tournament_name = tournament_season.get("tournament_name") or "The Nexus"
+
+            # Set Tournament Name field to "The Nexus" by default
+            StateManager.Set("tournamentInfo.tournamentName", tournament_name)
+            app = QApplication.instance()
+            if app:
+                for widget in app.allWidgets():
+                    if widget.objectName() == "tournamentName" and isinstance(widget, QLineEdit):
+                        if widget.text() != tournament_name:
+                            widget.setText(tournament_name)
+                            widget.editingFinished.emit()
+
             season_name = tournament_season.get("name") or "Nexus League"
             if self.phaseCombo.currentText() != season_name:
                 self.phaseCombo.setCurrentText(season_name)
                 self.PhaseExport()
+
+            # Best of (from fixture or active_game, default 3)
+            best_of_val = fixture.get("best_of") or active_game.get("best_of") or 3
+            try:
+                best_of_val = int(best_of_val)
+            except (ValueError, TypeError):
+                best_of_val = 3
+            if self.bestOf.value() != best_of_val:
+                self.bestOf.setValue(best_of_val)
+            self.ExportBestOf(best_of_val)
 
             round_num = live_state.get("round_number")
             match_title = f"Round {round_num}" if round_num else "Crew Battle"

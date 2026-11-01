@@ -43,6 +43,11 @@ class TSHTournamentInfoWidget(QDockWidget):
                     ])
                 widget.editingFinished.emit()
 
+        t_name_widget = self.findChild(QLineEdit, "tournamentName")
+        if t_name_widget and not t_name_widget.text():
+            t_name_widget.setText("The Nexus")
+            t_name_widget.editingFinished.emit()
+
         for widget in self.findChildren(QSpinBox):
             widget.valueChanged.connect(lambda value, element=widget: [
                 StateManager.Set(
