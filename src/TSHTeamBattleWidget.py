@@ -877,12 +877,22 @@ class TSHTeamBattleWidget(QDockWidget):
                 (away_players, self.team2playerWidgets, active_away_id, away_team, away_round_start)
             ]):
                 sponsor = team_info.get("short_name") or ""
-                active_idx = None
-                if active_id:
-                    for i, p in enumerate(team_players):
-                        if p.get("id") == active_id:
-                            active_idx = i
-                            break
+
+                # Determine active player for this team:
+                # 1. If active_id is explicitly set by live_state, use that player
+                # 2. If active_id is None but players from this team were already sent in,
+                #    keep the most recently sent-in player (highest slot_order) marked active
+                #    (with 0 stocks & eliminated status) until the next player is sent in.
+                effective_active_id = active_id
+                if not effective_active_id:
+                    team_selections = [
+                        (p, selections_by_player[p["id"]])
+                        for p in team_players
+                        if p.get("id") in selections_by_player
+                    ]
+                    if team_selections:
+                        team_selections.sort(key=lambda item: item[1].get("slot_order", 0))
+                        effective_active_id = team_selections[-1][0].get("id")
 
                 for p_idx, player in enumerate(team_players):
                     if p_idx < len(player_widgets):
@@ -903,25 +913,27 @@ class TSHTeamBattleWidget(QDockWidget):
 
                         pw.SetData(player_data, dontLoadFromDB=True, clear=False)
 
-                        is_active = (p_id == active_id) if active_id else False
+                        is_active = (p_id == effective_active_id) if effective_active_id else False
                         pw.SetActiveStatus(is_active)
 
                         # Set player stocks and eliminated status
-                        if active_idx is not None:
-                            if p_idx < active_idx:
-                                pw.dynamicSpinner.setValue(0)
-                                pw.SetEliminatedStatus(True)
-                                pw._previous_stock = 0
-                            elif p_idx == active_idx:
-                                cur_stk = int(round_start_stk) if round_start_stk is not None else stk_default
-                                pw.dynamicSpinner.setValue(cur_stk)
-                                pw.SetEliminatedStatus(cur_stk <= 0)
-                                pw._previous_stock = cur_stk
+                        sel = selections_by_player.get(p_id)
+                        if sel is not None:
+                            # Player has entered the match / been sent in
+                            p_stocks = sel.get("stocks_remaining")
+                            # If actively playing and not eliminated, respect round_start_stk if present
+                            if is_active and p_stocks is not None and int(p_stocks) > 0 and round_start_stk is not None:
+                                cur_stk = int(round_start_stk)
+                            elif p_stocks is not None:
+                                cur_stk = int(p_stocks)
                             else:
-                                pw.dynamicSpinner.setValue(stk_default)
-                                pw.SetEliminatedStatus(False)
-                                pw._previous_stock = stk_default
+                                cur_stk = stk_default
+
+                            pw.dynamicSpinner.setValue(cur_stk)
+                            pw.SetEliminatedStatus(cur_stk <= 0)
+                            pw._previous_stock = cur_stk
                         else:
+                            # Bench player: has not been sent in yet
                             pw.dynamicSpinner.setValue(stk_default)
                             pw.SetEliminatedStatus(False)
                             pw._previous_stock = stk_default
