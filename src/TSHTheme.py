@@ -559,7 +559,7 @@ def get_dark_theme_qss() -> str:
 
     /* Primary Accent Action Buttons */
     QPushButton#btSet, QPushButton#btSave,
-    QPushButton#btNexusLive, QPushButton#btSelectSet,
+    QPushButton#btSelectSet,
     QPushButton#setTournamentBt {{
         background-color: {PALETTE["btn_primary"]};
         color: #ffffff;
@@ -567,9 +567,26 @@ def get_dark_theme_qss() -> str:
         font-weight: 600;
     }}
     QPushButton#btSet:hover, QPushButton#btSave:hover,
-    QPushButton#btNexusLive:hover, QPushButton#btSelectSet:hover,
+    QPushButton#btSelectSet:hover,
     QPushButton#setTournamentBt:hover {{
         background-color: {PALETTE["btn_primary_hover"]};
+    }}
+
+    /* The Nexus Live Button - Emerald background with dark currant text and icon */
+    QPushButton#btNexusLive {{
+        background-color: #50C878;
+        color: #1a1921;
+        border: 1px solid #43ad66;
+        font-weight: 700;
+        padding: 2px 8px;
+    }}
+    QPushButton#btNexusLive:hover {{
+        background-color: #45b76b;
+        border-color: #3aa05c;
+    }}
+    QPushButton#btNexusLive:pressed {{
+        background-color: #3aa05c;
+        border-color: #318a4e;
     }}
 
     /* Top Tournament Toolbar Button Heights */
