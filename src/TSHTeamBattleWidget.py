@@ -201,33 +201,31 @@ class TSHTeamBattleWidget(QDockWidget):
                 ]
             )
 
-        actionsLayout.addWidget(resetValues, 0, 0)
-        actionsLayout.addWidget(self.eyeBt, 0, 1, 2, 1, Qt.AlignmentFlag.AlignVCenter)
-        actionsLayout.addWidget(resetEverything, 1, 0)
-
-        rowLayout.addWidget(actionsCol)
-
-        # Group 4: The Nexus Sync
-        nexusCol = QWidget()
-        nexusLayout = QVBoxLayout(nexusCol)
-        nexusLayout.setContentsMargins(0, 0, 0, 0)
-        nexusLayout.setSpacing(2)
-
         self.btNexus = QPushButton(QApplication.translate("app", "Load from The Nexus"))
         self.btNexus.setObjectName("btNexusLive")
         self.btNexus.setFixedHeight(24)
         self.btNexus.setIcon(QIcon(TSHResolve("assets/icons/nexus.svg")))
         self.btNexus.setIconSize(QSize(16, 16))
         self.btNexus.clicked.connect(self.PromptNexusLink)
-        nexusLayout.addWidget(self.btNexus)
 
         self.lblNexusStatus = QLabel("")
         self.lblNexusStatus.setObjectName("lblNexusStatus")
+        self.lblNexusStatus.setFixedHeight(20)
+        self.lblNexusStatus.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #8e8e93;")
-        nexusLayout.addWidget(self.lblNexusStatus)
 
-        rowLayout.addWidget(nexusCol)
+        actionsLayout.addWidget(resetValues, 0, 0)
+        actionsLayout.addWidget(self.btNexus, 0, 1)
+        actionsLayout.addWidget(resetEverything, 1, 0)
+        actionsLayout.addWidget(self.lblNexusStatus, 1, 1)
+
+        rowLayout.addWidget(actionsCol)
         rowLayout.addStretch()
+
+        # Visibility (Far Right, matching normal scoreboard)
+        self.eyeBt.setFixedSize(24, 24)
+        self.eyeBt.setIconSize(QSize(16, 16))
+        rowLayout.addWidget(self.eyeBt, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
 
         scrollArea = QScrollArea()
         scrollArea.setFrameShadow(QFrame.Shadow.Plain)
