@@ -214,12 +214,14 @@ class TSHTeamBattleWidget(QDockWidget):
         nexusLayout.setSpacing(2)
 
         self.btNexus = QPushButton(QApplication.translate("app", "Nexus Live"))
+        self.btNexus.setObjectName("btNexusLive")
         self.btNexus.setFixedHeight(24)
         self.btNexus.clicked.connect(self.PromptNexusLink)
         nexusLayout.addWidget(self.btNexus)
 
         self.lblNexusStatus = QLabel("")
-        self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #888888;")
+        self.lblNexusStatus.setObjectName("lblNexusStatus")
+        self.lblNexusStatus.setStyleSheet("font-size: 11px; color: #8e8e93;")
         nexusLayout.addWidget(self.lblNexusStatus)
 
         rowLayout.addWidget(nexusCol)
