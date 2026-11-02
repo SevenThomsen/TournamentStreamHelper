@@ -277,14 +277,14 @@ class TSHScoreboardWidget(QWidget):
 
         self.btSelectSet = QPushButton(
             QApplication.translate("app", "Load set"))
-        self.btSelectSet.setIcon(QIcon("./assets/icons/download-2-fill.svg"))
+        self.btSelectSet.setIcon(QIcon(TSHResolve("assets/icons/download-2-fill.svg")))
         self.btSelectSet.setEnabled(False)
         hbox.addWidget(self.btSelectSet)
         self.btSelectSet.clicked.connect(self.signals.SetSelection.emit)
 
         self.btLoadStationSet = QPushButton(
             QApplication.translate("app", "Track sets from a stream or station"))
-        self.btLoadStationSet.setIcon(QIcon("./assets/icons/video-on-fill.svg"))
+        self.btLoadStationSet.setIcon(QIcon(TSHResolve("assets/icons/video-on-fill.svg")))
         self.btLoadStationSet.setEnabled(False)
         hbox.addWidget(self.btLoadStationSet)
         self.btLoadStationSet.clicked.connect(

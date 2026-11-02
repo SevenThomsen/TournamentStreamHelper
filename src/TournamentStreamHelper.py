@@ -414,7 +414,7 @@ class Window(QMainWindow):
             self.dockWidgets.append(thumbnailSetting)
 
         bracket = TSHBracketWidget()
-        bracket.setWindowIcon(QIcon('assets/icons/bracket.svg'))
+        bracket.setWindowIcon(QIcon(TSHResolve('assets/icons/bracket.svg')))
         bracket.setObjectName(
             QApplication.translate("app", "Bracket"))
         self.addDockWidget(
@@ -422,7 +422,7 @@ class Window(QMainWindow):
         self.dockWidgets.append(bracket)
 
         tournamentInfo = TSHTournamentInfoWidget()
-        tournamentInfo.setWindowIcon(QIcon('assets/icons/info.svg'))
+        tournamentInfo.setWindowIcon(QIcon(TSHResolve('assets/icons/info.svg')))
         tournamentInfo.setObjectName(
             QApplication.translate("app", "Tournament Info"))
         self.addDockWidget(
@@ -430,7 +430,7 @@ class Window(QMainWindow):
         self.dockWidgets.append(tournamentInfo)
 
         teamBattle = TSHTeamBattleWidget()
-        teamBattle.setWindowIcon(QIcon('assets/icons/swords.svg'))
+        teamBattle.setWindowIcon(QIcon(TSHResolve('assets/icons/swords.svg')))
         teamBattle.setObjectName(
             add_beta_label(QApplication.translate("app", "Crew/Team Battle"), "team_battle"))
         self.addDockWidget(
@@ -438,7 +438,7 @@ class Window(QMainWindow):
         self.dockWidgets.append(teamBattle)
 
         self.scoreboard = TSHScoreboardManager.instance
-        self.scoreboard.setWindowIcon(QIcon('assets/icons/scoreboard.svg'))
+        self.scoreboard.setWindowIcon(QIcon(TSHResolve('assets/icons/scoreboard.svg')))
         self.scoreboard.setObjectName(
             QApplication.translate("app", "Scoreboard Manager"))
         self.addDockWidget(
@@ -448,7 +448,7 @@ class Window(QMainWindow):
             QApplication.translate("app", "Scoreboard Manager"))
 
         self.stageWidget = TSHScoreboardStageWidget()
-        self.stageWidget.setWindowIcon(QIcon('assets/icons/file-list-3-fill.svg'))
+        self.stageWidget.setWindowIcon(QIcon(TSHResolve('assets/icons/file-list-3-fill.svg')))
         self.stageWidget.setObjectName(
             QApplication.translate("app", "Stage"))
         self.addDockWidget(
@@ -456,7 +456,7 @@ class Window(QMainWindow):
         self.dockWidgets.append(self.stageWidget)
 
         commentary = TSHCommentaryWidget()
-        commentary.setWindowIcon(QIcon('assets/icons/mic.svg'))
+        commentary.setWindowIcon(QIcon(TSHResolve('assets/icons/mic.svg')))
         commentary.setObjectName(QApplication.translate("app", "Commentary"))
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, commentary)
         self.dockWidgets.append(commentary)
@@ -469,13 +469,13 @@ class Window(QMainWindow):
         self.stageWidget.stageStrikeLogic.signals.state_updated.connect(self.webserver.ws_ruleset)
 
         playerList = TSHPlayerListWidget()
-        playerList.setWindowIcon(QIcon('assets/icons/people.svg'))
+        playerList.setWindowIcon(QIcon(TSHResolve('assets/icons/people.svg')))
         playerList.setObjectName(QApplication.translate("app", "Player List"))
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, playerList)
         self.dockWidgets.append(playerList)
         
         notes = TSHNotesWidget()
-        notes.setWindowIcon(QIcon('assets/icons/notes.svg'))
+        notes.setWindowIcon(QIcon(TSHResolve('assets/icons/notes.svg')))
         notes.setObjectName(QApplication.translate("app", "Additional Notes"))
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, notes)
         self.dockWidgets.append(notes)
@@ -519,7 +519,7 @@ class Window(QMainWindow):
         self.unsetTournamentBt = QPushButton()
         self.unsetTournamentBt.setSizePolicy(
             QSizePolicy.Maximum, QSizePolicy.Maximum)
-        self.unsetTournamentBt.setIcon(QIcon("./assets/icons/cancel.svg"))
+        self.unsetTournamentBt.setIcon(QIcon(TSHResolve("./assets/icons/cancel.svg")))
         self.unsetTournamentBt.clicked.connect(lambda: [
             TSHTournamentDataProvider.instance.SetTournament(None)
         ])
@@ -528,7 +528,7 @@ class Window(QMainWindow):
         self.btPullCompletedSets = QPushButton(
             QApplication.translate("app", "Pull Latest Completed Sets from StartGG"))
         self.btPullCompletedSets.setObjectName("btPullCompletedSets")
-        self.btPullCompletedSets.setIcon(QIcon("./assets/icons/startgg.svg"))
+        self.btPullCompletedSets.setIcon(QIcon(TSHResolve("./assets/icons/startgg.svg")))
         self.btPullCompletedSets.clicked.connect(TSHTournamentDataProvider.instance.GetCompletedSets)
         hbox.addWidget(self.btPullCompletedSets)
 
