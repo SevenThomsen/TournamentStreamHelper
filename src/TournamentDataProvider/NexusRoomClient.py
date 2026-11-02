@@ -20,6 +20,7 @@ class NexusRoomClient(QObject):
         super().__init__(parent)
         self.signals = NexusRoomClientSignals()
         self.is_running = False
+        self._connection_generation = 0
         self.worker_thread = None
         self.current_session = None
         self.current_response = None
@@ -100,15 +101,21 @@ class NexusRoomClient(QObject):
         self.stream_url = f"{origin}/api/live-match/{slug}/stream{token_param}"
         self.snapshot_url = f"{origin}/api/live-match/{slug}{token_param}"
 
+        self._connection_generation += 1
+        current_gen = self._connection_generation
         self.is_running = True
         self.worker_thread = threading.Thread(
-            target=self._stream_worker, daemon=True, name=f"NexusStream-{slug}"
+            target=self._stream_worker,
+            args=(current_gen,),
+            daemon=True,
+            name=f"NexusStream-{slug}-{current_gen}",
         )
         self.worker_thread.start()
         return True, ""
 
     def disconnect(self):
         self.is_running = False
+        self._connection_generation += 1
 
         # 1. Forcibly close active HTTP streaming response to unblock reading socket
         if self.current_response:
@@ -116,6 +123,9 @@ class NexusRoomClient(QObject):
                 self.current_response.close()
                 if hasattr(self.current_response, "raw") and self.current_response.raw:
                     self.current_response.raw.close()
+                    sock = getattr(self.current_response.raw, "_fp", None)
+                    if sock and hasattr(sock, "close"):
+                        sock.close()
             except Exception:
                 pass
             self.current_response = None
@@ -128,10 +138,10 @@ class NexusRoomClient(QObject):
                 pass
             self.current_session = None
 
-        # 3. Wait for worker thread to terminate cleanly
+        # 3. Wait briefly for worker thread to terminate cleanly
         if self.worker_thread and self.worker_thread.is_alive():
             if threading.current_thread() != self.worker_thread:
-                self.worker_thread.join(timeout=1.0)
+                self.worker_thread.join(timeout=0.5)
             self.worker_thread = None
 
         self.slug = None
@@ -153,25 +163,31 @@ class NexusRoomClient(QObject):
             logger.debug(f"[NexusRoomClient] Initial snapshot fetch failed: {e}")
         return False
 
-    def _stream_worker(self):
-        logger.info(f"[NexusRoomClient] Starting stream client for {self.slug}")
+    def _stream_worker(self, generation: int):
+        logger.info(
+            f"[NexusRoomClient] Starting stream client for {self.slug} (gen {generation})"
+        )
         self.signals.connection_status_changed.emit(False, f"Connecting to {self.slug}...")
 
-        # Immediate pre-fetch for instant UI population
-        self._fetch_snapshot()
+        backoff_delay = 3
 
-        while self.is_running:
+        while self.is_running and self._connection_generation == generation:
             try:
-                self.current_session = requests.Session()
+                session = requests.Session()
+                self.current_session = session
                 logger.info(f"[NexusRoomClient] Connecting to {self.stream_url}")
 
-                with self.current_session.get(
+                with session.get(
                     self.stream_url,
                     stream=True,
-                    timeout=(10, 60),
+                    timeout=(10, 90),
                     headers={"Accept": "text/event-stream"},
                 ) as resp:
+                    if not self.is_running or self._connection_generation != generation:
+                        break
+
                     self.current_response = resp
+
                     if resp.status_code == 401:
                         self.signals.error_occurred.emit(
                             "Unauthorized: Invalid or expired Nexus stream token."
@@ -192,11 +208,25 @@ class NexusRoomClient(QObject):
                         self.is_running = False
                         break
 
+                    if resp.status_code == 429:
+                        logger.warning(
+                            "[NexusRoomClient] Server returned 429 Too Many Requests (Rate exceeded). Backing off for 15s..."
+                        )
+                        self.signals.connection_status_changed.emit(
+                            False, "Rate Limited (429)"
+                        )
+                        for _ in range(15):
+                            if not self.is_running or self._connection_generation != generation:
+                                break
+                            time.sleep(1)
+                        continue
+
                     if resp.status_code != 200:
                         self.signals.connection_status_changed.emit(
                             False, f"HTTP {resp.status_code}"
                         )
-                        time.sleep(3)
+                        time.sleep(backoff_delay)
+                        backoff_delay = min(backoff_delay * 1.5, 30)
                         continue
 
                     # Validate that response is an event-stream
@@ -214,10 +244,11 @@ class NexusRoomClient(QObject):
                     self.signals.connection_status_changed.emit(
                         True, f"Connected ({self.slug})"
                     )
+                    backoff_delay = 3
 
                     try:
                         for raw_line in resp.iter_lines(decode_unicode=True):
-                            if not self.is_running:
+                            if not self.is_running or self._connection_generation != generation:
                                 break
 
                             if not raw_line:
@@ -237,10 +268,17 @@ class NexusRoomClient(QObject):
                         self.current_response = None
 
             except Exception as e:
-                if not self.is_running:
+                if not self.is_running or self._connection_generation != generation:
                     break
-                logger.warning(f"[NexusRoomClient] Stream disconnected: {e}. Reconnecting in 3s...")
+                logger.warning(
+                    f"[NexusRoomClient] Stream disconnected: {e}. Reconnecting in {int(backoff_delay)}s..."
+                )
                 self.signals.connection_status_changed.emit(False, "Reconnecting...")
-                time.sleep(3)
+                for _ in range(int(backoff_delay)):
+                    if not self.is_running or self._connection_generation != generation:
+                        break
+                    time.sleep(1)
+                backoff_delay = min(backoff_delay * 1.5, 30)
 
-        self.signals.connection_status_changed.emit(False, "Disconnected")
+        if self._connection_generation == generation:
+            self.signals.connection_status_changed.emit(False, "Disconnected")
