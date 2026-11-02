@@ -108,43 +108,30 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(slug, "cloudrun-match")
         self.assertEqual(token, "cr_tok")
 
-    def test_worker_selection_by_host(self):
-        # thenexus.gg -> uses polling worker
-        origin, slug, token = self.client.parse_url("https://qa.thenexus.gg/matches/qa-crew/live")
-        use_polling = origin.endswith(".thenexus.gg") or "thenexus.gg" in origin
-        self.assertTrue(use_polling)
-
-        # localhost -> uses streaming worker
-        origin_l, slug_l, token_l = self.client.parse_url("http://localhost:3000/matches/local-crew/live")
-        use_polling_l = "thenexus.gg" in origin_l
-        self.assertFalse(use_polling_l)
-
-        # Cloud Run -> uses streaming worker
-        origin_cr, slug_cr, token_cr = self.client.parse_url("https://service-hash.a.run.app/matches/cr-crew/live")
-        use_polling_cr = "thenexus.gg" in origin_cr
-        self.assertFalse(use_polling_cr)
-
-    def test_polling_worker_emits_connected_and_deduplicates(self):
-        connected_events = []
-        payload_events = []
-        self.client.signals.connection_status_changed.connect(
-            lambda c, msg: connected_events.append((c, msg))
+    def test_connect_url_maps_backends_for_direct_streaming(self):
+        # qa.thenexus.gg -> maps to direct Cloud Run QA backend
+        self.client.connect_url("https://qa.thenexus.gg/matches/qa-crew/live?token=test_tok")
+        self.assertEqual(
+            self.client.stream_url,
+            "https://the-nexus-qa-ia6suqvgqq-ue.a.run.app/api/live-match/qa-crew/stream?token=test_tok"
         )
-        self.client.signals.room_updated.connect(lambda p: payload_events.append(p))
+        self.client.disconnect()
 
-        mock_data = {"fixture": {"id": "test-match", "status": "in_progress"}}
-        mock_response = lambda: (True, mock_data, 200)
-        self.client._fetch_snapshot = lambda s=None: mock_response()
+        # thenexus.gg -> maps to direct Cloud Run Prod backend
+        self.client.connect_url("https://thenexus.gg/matches/prod-crew/live?token=test_tok")
+        self.assertEqual(
+            self.client.stream_url,
+            "https://the-nexus-prod-d2p5zehliq-ue.a.run.app/api/live-match/prod-crew/stream?token=test_tok"
+        )
+        self.client.disconnect()
 
-        self.client.is_running = True
-        self.client.slug = "test-match"
-        gen = 1
-        self.client._connection_generation = gen
-
-        # Run 1 iteration of poll logic manually or simulate fetch
-        success, data, code = self.client._fetch_snapshot()
-        self.assertTrue(success)
-        self.assertEqual(data["fixture"]["id"], "test-match")
+        # localhost -> preserves localhost for dev
+        self.client.connect_url("http://localhost:3000/matches/local-crew/live?token=test_tok")
+        self.assertEqual(
+            self.client.stream_url,
+            "http://localhost:3000/api/live-match/local-crew/stream?token=test_tok"
+        )
+        self.client.disconnect()
 
     def test_disconnect_cleans_up_resources(self):
         class MockRaw:
