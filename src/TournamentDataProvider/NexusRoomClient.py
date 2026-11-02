@@ -9,12 +9,7 @@ from qtpy.QtCore import QObject, Signal
 import requests
 
 
-# Direct Cloud Run backend origins that bypass Firebase Hosting's CDN stream-buffering proxy.
-NEXUS_STREAM_BACKENDS = {
-    "qa.thenexus.gg": "https://the-nexus-qa-ia6suqvgqq-ue.a.run.app",
-    "thenexus.gg": "https://the-nexus-prod-d2p5zehliq-ue.a.run.app",
-    "www.thenexus.gg": "https://the-nexus-prod-d2p5zehliq-ue.a.run.app",
-}
+# Direct Cloud Run hostnames (*.a.run.app) or custom domains are allowed.
 
 
 class NexusRoomClientSignals(QObject):
@@ -109,13 +104,8 @@ class NexusRoomClient(QObject):
         self.token = token
         token_param = f"?token={token}" if token else ""
 
-        # Map edge CDN domains (Firebase Hosting) to direct Cloud Run backend for real-time streaming
-        parsed_origin = urlparse(origin)
-        host = parsed_origin.netloc.split(":")[0].lower()
-        backend_origin = NEXUS_STREAM_BACKENDS.get(host, origin)
-
-        self.stream_url = f"{backend_origin}/api/live-match/{slug}/stream{token_param}"
-        self.snapshot_url = f"{backend_origin}/api/live-match/{slug}{token_param}"
+        self.stream_url = f"{origin}/api/live-match/{slug}/stream{token_param}"
+        self.snapshot_url = f"{origin}/api/live-match/{slug}{token_param}"
 
         self._connection_generation += 1
         current_gen = self._connection_generation

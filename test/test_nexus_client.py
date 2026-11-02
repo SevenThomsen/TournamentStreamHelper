@@ -108,20 +108,20 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(slug, "cloudrun-match")
         self.assertEqual(token, "cr_tok")
 
-    def test_connect_url_maps_backends_for_direct_streaming(self):
-        # qa.thenexus.gg -> maps to direct Cloud Run QA backend
+    def test_connect_url_constructs_stream_urls(self):
+        # qa.thenexus.gg -> uses official domain; server returns 307 redirect to streaming host
         self.client.connect_url("https://qa.thenexus.gg/matches/qa-crew/live?token=test_tok")
         self.assertEqual(
             self.client.stream_url,
-            "https://the-nexus-qa-ia6suqvgqq-ue.a.run.app/api/live-match/qa-crew/stream?token=test_tok"
+            "https://qa.thenexus.gg/api/live-match/qa-crew/stream?token=test_tok"
         )
         self.client.disconnect()
 
-        # thenexus.gg -> maps to direct Cloud Run Prod backend
+        # thenexus.gg -> uses official domain
         self.client.connect_url("https://thenexus.gg/matches/prod-crew/live?token=test_tok")
         self.assertEqual(
             self.client.stream_url,
-            "https://the-nexus-prod-d2p5zehliq-ue.a.run.app/api/live-match/prod-crew/stream?token=test_tok"
+            "https://thenexus.gg/api/live-match/prod-crew/stream?token=test_tok"
         )
         self.client.disconnect()
 
