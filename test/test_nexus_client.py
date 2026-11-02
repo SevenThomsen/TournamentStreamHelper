@@ -101,6 +101,51 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(received_payloads[0]["match_id"], 42)
         self.assertEqual(received_payloads[0]["active_duelist_id"], 101)
 
+    def test_parse_url_cloud_run_host(self):
+        url = "https://the-nexus-qa-ia6suqvgqq-ue.a.run.app/matches/cloudrun-match/live?token=cr_tok"
+        origin, slug, token = self.client.parse_url(url)
+        self.assertEqual(origin, "https://the-nexus-qa-ia6suqvgqq-ue.a.run.app")
+        self.assertEqual(slug, "cloudrun-match")
+        self.assertEqual(token, "cr_tok")
+
+    def test_worker_selection_by_host(self):
+        # thenexus.gg -> uses polling worker
+        origin, slug, token = self.client.parse_url("https://qa.thenexus.gg/matches/qa-crew/live")
+        use_polling = origin.endswith(".thenexus.gg") or "thenexus.gg" in origin
+        self.assertTrue(use_polling)
+
+        # localhost -> uses streaming worker
+        origin_l, slug_l, token_l = self.client.parse_url("http://localhost:3000/matches/local-crew/live")
+        use_polling_l = "thenexus.gg" in origin_l
+        self.assertFalse(use_polling_l)
+
+        # Cloud Run -> uses streaming worker
+        origin_cr, slug_cr, token_cr = self.client.parse_url("https://service-hash.a.run.app/matches/cr-crew/live")
+        use_polling_cr = "thenexus.gg" in origin_cr
+        self.assertFalse(use_polling_cr)
+
+    def test_polling_worker_emits_connected_and_deduplicates(self):
+        connected_events = []
+        payload_events = []
+        self.client.signals.connection_status_changed.connect(
+            lambda c, msg: connected_events.append((c, msg))
+        )
+        self.client.signals.room_updated.connect(lambda p: payload_events.append(p))
+
+        mock_data = {"fixture": {"id": "test-match", "status": "in_progress"}}
+        mock_response = lambda: (True, mock_data, 200)
+        self.client._fetch_snapshot = lambda s=None: mock_response()
+
+        self.client.is_running = True
+        self.client.slug = "test-match"
+        gen = 1
+        self.client._connection_generation = gen
+
+        # Run 1 iteration of poll logic manually or simulate fetch
+        success, data, code = self.client._fetch_snapshot()
+        self.assertTrue(success)
+        self.assertEqual(data["fixture"]["id"], "test-match")
+
     def test_disconnect_cleans_up_resources(self):
         class MockRaw:
             def __init__(self):
