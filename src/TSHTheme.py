@@ -69,13 +69,66 @@ def get_dark_theme_qss() -> str:
         letter-spacing: 0.4px;
     }}
 
-    /* Center-aligned Score & Stock Spinners - balanced padding for arrow subcontrols */
-    QSpinBox#score_left, QSpinBox#score_right,
+    /* Center-aligned Stock & Best Of Spinners - balanced padding for arrow subcontrols */
     QSpinBox#dynamicSpinner,
     QSpinBox#best_of, QSpinBox#bestOf {{
         padding-left: 18px;
         padding-right: 18px;
     }}
+
+    /* Taller Score Spinners in Score Column - Prominent, easy to select and read */
+    QSpinBox#score_left, QSpinBox#score_right {{
+        min-height: 40px;
+        max-height: 40px;
+        font-size: 20px;
+        font-weight: bold;
+        padding-left: 20px;
+        padding-right: 24px;
+        border-radius: 6px;
+    }}
+    QSpinBox#score_left::up-button, QSpinBox#score_right::up-button {{
+        subcontrol-origin: border;
+        subcontrol-position: top right;
+        width: 18px;
+        top: 4px;
+        bottom: 0px;
+        right: 4px;
+        border: none;
+        background: transparent;
+    }}
+    QSpinBox#score_left::down-button, QSpinBox#score_right::down-button {{
+        subcontrol-origin: border;
+        subcontrol-position: bottom right;
+        width: 18px;
+        top: 0px;
+        bottom: 4px;
+        right: 4px;
+        border: none;
+        background: transparent;
+    }}
+    QSpinBox#score_left::up-arrow, QSpinBox#score_right::up-arrow {{
+        image: url({ICON_DIR}/arrow_up_spin.svg);
+        width: 11px;
+        height: 7px;
+    }}
+    QSpinBox#score_left::up-arrow:hover {{
+        image: url({ICON_DIR}/arrow_up_spin_hover.svg);
+    }}
+    QSpinBox#score_left::up-arrow:disabled, QSpinBox#score_left::up-arrow:off {{
+        image: url({ICON_DIR}/arrow_up_spin_disabled.svg);
+    }}
+    QSpinBox#score_left::down-arrow, QSpinBox#score_right::down-arrow {{
+        image: url({ICON_DIR}/arrow_down_spin.svg);
+        width: 11px;
+        height: 7px;
+    }}
+    QSpinBox#score_left::down-arrow:hover {{
+        image: url({ICON_DIR}/arrow_down_spin_hover.svg);
+    }}
+    QSpinBox#score_left::down-arrow:disabled, QSpinBox#score_left::down-arrow:off {{
+        image: url({ICON_DIR}/arrow_down_spin_disabled.svg);
+    }}
+
 
     /* Score Column GroupBox - Seamless Folder Tab Title */
     QGroupBox#scoreGroupBox {{
@@ -108,7 +161,10 @@ def get_dark_theme_qss() -> str:
     }}
 
     /* Team column main container (borderless wrapper around player list) */
-    QGroupBox#groupBox {{
+    TSHScoreboardWidget > QGroupBox#groupBox,
+    TSHTeamBattleWidget QGroupBox#groupBox,
+    QWidget#team1column QGroupBox#groupBox,
+    QWidget#team2column QGroupBox#groupBox {{
         background-color: transparent;
         border: none;
         margin-top: 4px;
@@ -163,6 +219,16 @@ def get_dark_theme_qss() -> str:
     QPushButton:pressed {{
         background-color: #1f1f22;
         border-color: {PALETTE["accent"]};
+    }}
+    QPushButton:checked {{
+        background-color: {PALETTE["accent"]};
+        color: #ffffff;
+        border: 1px solid {PALETTE["accent"]};
+        font-weight: 600;
+    }}
+    QPushButton:checked:hover {{
+        background-color: {PALETTE["btn_primary_hover"]};
+        border-color: {PALETTE["btn_primary_hover"]};
     }}
     QPushButton:disabled {{
         background-color: #161618;
@@ -604,27 +670,115 @@ def get_dark_theme_qss() -> str:
         max-height: 22px;
     }}
 
-    /* Danger / Clear Buttons */
-    QPushButton#btClear {{
-        border-color: {PALETTE["btn_danger_border"]};
+    /* Best Of Toggle Group - Linked Segmented Control */
+    QWidget#toggleGroupBestOf {{
+        background: transparent;
+        border: none;
     }}
-    QPushButton#btClear:hover {{
-        background-color: {PALETTE["btn_danger"]};
-        color: {PALETTE["btn_danger_text"]};
+    QPushButton#btBestOf3 {{
+        background-color: {PALETTE["btn_secondary"]};
+        color: {PALETTE["text"]};
+        border: 1px solid {PALETTE["border"]};
+        border-right: none;
+        border-top-left-radius: 5px;
+        border-bottom-left-radius: 5px;
+        border-top-right-radius: 0px;
+        border-bottom-right-radius: 0px;
+        min-height: 24px;
+        max-height: 24px;
+        min-width: 36px;
+        max-width: 36px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0px;
+    }}
+    QPushButton#btBestOf3:hover {{
+        background-color: {PALETTE["btn_secondary_hover"]};
+    }}
+    QPushButton#btBestOf3:checked {{
+        background-color: {PALETTE["btn_primary"]};
+        color: #ffffff;
+        border: 1px solid {PALETTE["btn_primary"]};
+        border-right: none;
+    }}
+    QPushButton#btBestOf3:checked:hover {{
+        background-color: {PALETTE["btn_primary_hover"]};
+        border-color: {PALETTE["btn_primary_hover"]};
     }}
 
-    /* Reset Score Button - always filled with danger red background */
-    QPushButton#btResetScore {{
+    QPushButton#btBestOf5 {{
+        background-color: {PALETTE["btn_secondary"]};
+        color: {PALETTE["text"]};
+        border: 1px solid {PALETTE["border"]};
+        border-right: none;
+        border-radius: 0px;
+        min-height: 24px;
+        max-height: 24px;
+        min-width: 36px;
+        max-width: 36px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0px;
+    }}
+    QPushButton#btBestOf5:hover {{
+        background-color: {PALETTE["btn_secondary_hover"]};
+    }}
+    QPushButton#btBestOf5:checked {{
+        background-color: {PALETTE["btn_primary"]};
+        color: #ffffff;
+        border: 1px solid {PALETTE["btn_primary"]};
+        border-right: none;
+    }}
+    QPushButton#btBestOf5:checked:hover {{
+        background-color: {PALETTE["btn_primary_hover"]};
+        border-color: {PALETTE["btn_primary_hover"]};
+    }}
+
+    QLineEdit#bestOfCustom {{
+        background-color: {PALETTE["input"]};
+        color: {PALETTE["text"]};
+        border: 1px solid {PALETTE["border"]};
+        border-top-right-radius: 5px;
+        border-bottom-right-radius: 5px;
+        border-top-left-radius: 0px;
+        border-bottom-left-radius: 0px;
+        min-height: 24px;
+        max-height: 24px;
+        min-width: 42px;
+        max-width: 42px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0px;
+    }}
+    QLineEdit#bestOfCustom:hover {{
+        border-color: #3e3e44;
+    }}
+    QLineEdit#bestOfCustom:focus {{
+        border: 1px solid {PALETTE["border_focus"]};
+        background-color: #242429;
+    }}
+    QLineEdit#bestOfCustom[hasValue="true"] {{
+        background-color: {PALETTE["btn_primary"]};
+        color: #ffffff;
+        border: 1px solid {PALETTE["btn_primary"]};
+        font-weight: bold;
+    }}
+
+    /* Danger Buttons (Reset Score, Clear) - always filled with solid danger red background */
+    QPushButton#btResetScore,
+    QPushButton#btClear {{
         background-color: {PALETTE["btn_danger"]};
         border: 1px solid {PALETTE["btn_danger_border"]};
         color: {PALETTE["btn_danger_text"]};
         font-weight: 600;
     }}
-    QPushButton#btResetScore:hover {{
+    QPushButton#btResetScore:hover,
+    QPushButton#btClear:hover {{
         background-color: {PALETTE["btn_danger_hover"]};
         border-color: #b84a4a;
     }}
-    QPushButton#btResetScore:pressed {{
+    QPushButton#btResetScore:pressed,
+    QPushButton#btClear:pressed {{
         background-color: #6e2424;
         border-color: {PALETTE["btn_danger_border"]};
     }}

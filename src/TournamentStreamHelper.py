@@ -448,6 +448,7 @@ class Window(QMainWindow):
             QApplication.translate("app", "Scoreboard Manager"))
 
         self.stageWidget = TSHScoreboardStageWidget()
+        self.stageWidget.setWindowIcon(QIcon('assets/icons/file-list-3-fill.svg'))
         self.stageWidget.setObjectName(
             QApplication.translate("app", "Stage"))
         self.addDockWidget(
@@ -502,7 +503,7 @@ class Window(QMainWindow):
             QSizePolicy.Minimum, QSizePolicy.Maximum)
         base_layout.layout().addWidget(group_box)
 
-        # Set tournament
+        # Set tournament and Completed Sets
         hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(4)
@@ -523,6 +524,13 @@ class Window(QMainWindow):
             TSHTournamentDataProvider.instance.SetTournament(None)
         ])
         hbox.addWidget(self.unsetTournamentBt)
+
+        self.btPullCompletedSets = QPushButton(
+            QApplication.translate("app", "Pull Latest Completed Sets from StartGG"))
+        self.btPullCompletedSets.setObjectName("btPullCompletedSets")
+        self.btPullCompletedSets.setIcon(QIcon("./assets/icons/startgg.svg"))
+        self.btPullCompletedSets.clicked.connect(TSHTournamentDataProvider.instance.GetCompletedSets)
+        hbox.addWidget(self.btPullCompletedSets)
 
         # Follow startgg user
         if not SettingsManager.Get("general.hide_track_player", False):
@@ -552,16 +560,6 @@ class Window(QMainWindow):
             hbox.addWidget(self.btLoadPlayerSetOptions)
 
             self.UpdateUserSetButton()
-        
-        # Completed Sets Feature
-        hbox = QHBoxLayout()
-        group_box.layout().addLayout(hbox)
-        self.btPullCompletedSets = QPushButton(
-            QApplication.translate("app", "Pull Latest Completed Sets from StartGG"))
-        self.btPullCompletedSets.setObjectName("btPullCompletedSets")
-        self.btPullCompletedSets.setIcon(QIcon("./assets/icons/startgg.svg"))
-        self.btPullCompletedSets.clicked.connect(TSHTournamentDataProvider.instance.GetCompletedSets)
-        hbox.addWidget(self.btPullCompletedSets)
         # label_margin = " "*18
         # label = QLabel(
         #     label_margin + QApplication.translate("app", "Time until Completed Sets refresh:") + " ")

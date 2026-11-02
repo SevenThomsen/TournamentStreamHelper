@@ -272,19 +272,20 @@ class TSHScoreboardWidget(QWidget):
             self.streamUrlTextBox.editingFinished.emit()
             bottomOptions.layout().addLayout(self.streamUrl)
 
-        self.btSelectSet = QPushButton(
-            QApplication.translate("app", "Load set"))
-        self.btSelectSet.setIcon(QIcon("./assets/icons/list.svg"))
-        self.btSelectSet.setEnabled(False)
-        bottomOptions.layout().addWidget(self.btSelectSet)
-        self.btSelectSet.clicked.connect(self.signals.SetSelection.emit)
-
         hbox = QHBoxLayout()
         bottomOptions.layout().addLayout(hbox)
 
+        self.btSelectSet = QPushButton(
+            QApplication.translate("app", "Load set"))
+        self.btSelectSet.setIcon(QIcon("./assets/icons/download-2-fill.svg"))
+        self.btSelectSet.setEnabled(False)
+        hbox.addWidget(self.btSelectSet)
+        self.btSelectSet.clicked.connect(self.signals.SetSelection.emit)
+
         self.btLoadStationSet = QPushButton(
             QApplication.translate("app", "Track sets from a stream or station"))
-        self.btLoadStationSet.setIcon(QIcon("./assets/icons/station.svg"))
+        self.btLoadStationSet.setIcon(QIcon("./assets/icons/video-on-fill.svg"))
+        self.btLoadStationSet.setEnabled(False)
         hbox.addWidget(self.btLoadStationSet)
         self.btLoadStationSet.clicked.connect(
             self.signals.StationSelection.emit)
@@ -511,10 +512,112 @@ class TSHScoreboardWidget(QWidget):
             sp = self.scoreColumn.findChild(QSpinBox, sb_name)
             if sp:
                 sp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                sp.setStyleSheet("QSpinBox { padding-left: 18px; padding-right: 18px; }")
 
         self.scoreColumn.findChild(QSpinBox, "best_of").valueChanged.connect(
             self.ExportBestOf)
+
+        # Best of toggle group setup
+        self.btBestOf3 = self.scoreColumn.findChild(QPushButton, "btBestOf3")
+        self.btBestOf5 = self.scoreColumn.findChild(QPushButton, "btBestOf5")
+        self.bestOfCustom = self.scoreColumn.findChild(QLineEdit, "bestOfCustom")
+        bestOfSpin = self.scoreColumn.findChild(QSpinBox, "best_of")
+
+        if self.btBestOf3 and self.btBestOf5 and self.bestOfCustom and bestOfSpin:
+            bestOfSpin.setVisible(False)
+            self.bestOfCustom.setValidator(QIntValidator(0, 999))
+            self.bestOfUpdating = False
+
+            def update_custom_property(has_val):
+                self.bestOfCustom.setProperty("hasValue", "true" if has_val else "false")
+                self.bestOfCustom.style().unpolish(self.bestOfCustom)
+                self.bestOfCustom.style().polish(self.bestOfCustom)
+
+            def on_best_of_button_clicked(target_btn):
+                self.bestOfUpdating = True
+                if target_btn == self.btBestOf3:
+                    if self.btBestOf3.isChecked():
+                        self.btBestOf5.setChecked(False)
+                        self.bestOfCustom.setText("")
+                        update_custom_property(False)
+                        bestOfSpin.setValue(3)
+                    else:
+                        bestOfSpin.setValue(0)
+                elif target_btn == self.btBestOf5:
+                    if self.btBestOf5.isChecked():
+                        self.btBestOf3.setChecked(False)
+                        self.bestOfCustom.setText("")
+                        update_custom_property(False)
+                        bestOfSpin.setValue(5)
+                    else:
+                        bestOfSpin.setValue(0)
+                self.bestOfUpdating = False
+
+            self.btBestOf3.clicked.connect(lambda: on_best_of_button_clicked(self.btBestOf3))
+            self.btBestOf5.clicked.connect(lambda: on_best_of_button_clicked(self.btBestOf5))
+
+            def on_custom_text_changed(text):
+                if self.bestOfUpdating:
+                    return
+                self.bestOfUpdating = True
+                clean_text = text.strip()
+                if clean_text == "" or clean_text == "0":
+                    self.btBestOf3.setChecked(False)
+                    self.btBestOf5.setChecked(False)
+                    update_custom_property(False)
+                    bestOfSpin.setValue(0)
+                elif clean_text.isdigit():
+                    val = int(clean_text)
+                    if val == 3:
+                        self.btBestOf3.setChecked(True)
+                        self.btBestOf5.setChecked(False)
+                        update_custom_property(False)
+                        bestOfSpin.setValue(3)
+                    elif val == 5:
+                        self.btBestOf3.setChecked(False)
+                        self.btBestOf5.setChecked(True)
+                        update_custom_property(False)
+                        bestOfSpin.setValue(5)
+                    else:
+                        self.btBestOf3.setChecked(False)
+                        self.btBestOf5.setChecked(False)
+                        update_custom_property(True)
+                        bestOfSpin.setValue(val)
+                self.bestOfUpdating = False
+
+            self.bestOfCustom.textChanged.connect(on_custom_text_changed)
+
+            def on_best_of_value_changed(val):
+                if self.bestOfUpdating:
+                    return
+                self.bestOfUpdating = True
+                if val == 3:
+                    self.btBestOf3.setChecked(True)
+                    self.btBestOf5.setChecked(False)
+                    update_custom_property(False)
+                    if self.bestOfCustom.text() != "":
+                        self.bestOfCustom.setText("")
+                elif val == 5:
+                    self.btBestOf3.setChecked(False)
+                    self.btBestOf5.setChecked(True)
+                    update_custom_property(False)
+                    if self.bestOfCustom.text() != "":
+                        self.bestOfCustom.setText("")
+                elif val > 0:
+                    self.btBestOf3.setChecked(False)
+                    self.btBestOf5.setChecked(False)
+                    update_custom_property(True)
+                    if self.bestOfCustom.text() != str(val):
+                        self.bestOfCustom.setText(str(val))
+                else:
+                    self.btBestOf3.setChecked(False)
+                    self.btBestOf5.setChecked(False)
+                    update_custom_property(False)
+                    if self.bestOfCustom.text() != "":
+                        self.bestOfCustom.setText("")
+                self.bestOfUpdating = False
+
+            bestOfSpin.valueChanged.connect(on_best_of_value_changed)
+
         self.scoreColumn.findChild(QSpinBox, "best_of").valueChanged.emit(0)
 
         self.scoreColumn.findChild(QSpinBox, "score_left").valueChanged.connect(
@@ -590,14 +693,16 @@ class TSHScoreboardWidget(QWidget):
                 f"score.{self.scoreboardNumber}.best_of", value)
             StateManager.Set(
                 f"score.{self.scoreboardNumber}.best_of_short_text", f"BO{value}")
-            StateManager.Set(f"score.{self.scoreboardNumber}.best_of_text", TSHLocaleHelper.matchNames.get(
-                "best_of").format(value) if value > 0 else "")
+            best_of_fmt = TSHLocaleHelper.matchNames.get("best_of") or "Best of {0}"
+            StateManager.Set(f"score.{self.scoreboardNumber}.best_of_text",
+                best_of_fmt.format(value) if value > 0 else "")
             StateManager.Set(
                 f"score.{self.scoreboardNumber}.first_to", math.ceil(value/2))
             StateManager.Set(
                 f"score.{self.scoreboardNumber}.first_to_short_text", f"FT{math.ceil(value/2)}")
-            StateManager.Set(f"score.{self.scoreboardNumber}.first_to_text", TSHLocaleHelper.matchNames.get(
-                "first_to").format(math.ceil(value/2)) if value > 0 else "")
+            first_to_fmt = TSHLocaleHelper.matchNames.get("first_to") or "First to {0}"
+            StateManager.Set(f"score.{self.scoreboardNumber}.first_to_text",
+                first_to_fmt.format(math.ceil(value/2)) if value > 0 else "")
             self.individualGameTracker.SetStageCount(value)
 
     def StageResultsToScore(self, team_1_score, team_2_score):
