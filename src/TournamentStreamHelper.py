@@ -469,7 +469,7 @@ class Window(QMainWindow):
         self.stageWidget.stageStrikeLogic.signals.state_updated.connect(self.webserver.ws_ruleset)
 
         playerList = TSHPlayerListWidget()
-        playerList.setWindowIcon(QIcon(TSHResolve('assets/icons/people.svg')))
+        playerList.setWindowIcon(QIcon(TSHResolve('assets/icons/group-3-fill.svg')))
         playerList.setObjectName(QApplication.translate("app", "Player List"))
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, playerList)
         self.dockWidgets.append(playerList)
