@@ -6,6 +6,7 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.TournamentDataProvider.NexusRoomClient import NexusRoomClient
+from src.Helpers.TSHCharacterHelper import normalize_character_name, parse_mii_moveset
 
 
 class TestNexusRoomClient(unittest.TestCase):
@@ -161,6 +162,36 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertIsNone(self.client.current_response)
         self.assertIsNone(self.client.slug)
         self.assertIsNone(self.client.token)
+
+    def test_mii_character_normalization(self):
+        cases = [
+            ("Mii Brawler (1332)", ("Mii Brawler", "1332")),
+            ("Mii Gunner (3122)", ("Mii Gunner", "3122")),
+            ("Mii Swordfighter (2132)", ("Mii Swordfighter", "2132")),
+            ("Mii Sword Fighter (2132)", ("Mii Swordfighter", "2132")),
+            ("Mii Brawler 1332", ("Mii Brawler", "1332")),
+            ("mii brawler (1231)", ("Mii Brawler", "1231")),
+            ("Mii Brawler", ("Mii Brawler", None)),
+            ("Mii Gunner", ("Mii Gunner", None)),
+            ("Mii Swordfighter", ("Mii Swordfighter", None)),
+            ("Mario", ("Mario", None)),
+            ("Fox", ("Fox", None)),
+            ("", (None, None)),
+            (None, (None, None)),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize_character_name(raw), expected)
+
+    def test_parse_mii_moveset(self):
+        self.assertEqual(parse_mii_moveset("Mii Brawler (1332)"), "1332")
+        self.assertEqual(parse_mii_moveset("Mii Gunner (3122)"), "3122")
+        self.assertEqual(parse_mii_moveset("1332"), "1332")
+        self.assertEqual(parse_mii_moveset("(2132)"), "2132")
+        self.assertIsNone(parse_mii_moveset("Mii Brawler"))
+        self.assertIsNone(parse_mii_moveset("Mario"))
+        self.assertIsNone(parse_mii_moveset(""))
+        self.assertIsNone(parse_mii_moveset(None))
 
 
 if __name__ == "__main__":

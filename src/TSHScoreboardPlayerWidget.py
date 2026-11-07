@@ -20,6 +20,7 @@ import threading
 from .Helpers.TSHBadWordFilter import TSHBadWordFilter
 from .Helpers.TSHCustomPlayerCompleter import TSHCustomPlayerCompleter
 from .Helpers.TSHLocaleHelper import TSHLocaleHelper
+from .Helpers.TSHCharacterHelper import normalize_character_name
 from loguru import logger
 
 
@@ -881,13 +882,16 @@ class TSHScoreboardPlayerWidget(QGroupBox):
 
             if data.get("mains") and no_mains != True:
                 if type(data.get("mains")) == list:
+                    target_main = data.get("mains")[0]
+                    base_target, _ = normalize_character_name(target_main)
                     for element in self.character_elements:
                         character_element = element[1]
                         characterIndex = 0
                         for i in range(character_element.model().rowCount()):
                             item = character_element.model().item(i).data(Qt.ItemDataRole.UserRole)
                             if item:
-                                if item.get("en_name") == data.get("mains")[0]:
+                                en = item.get("en_name")
+                                if en == target_main or (base_target and en == base_target):
                                     characterIndex = i
                                     break
                         character_element.setCurrentIndex(characterIndex)
@@ -902,11 +906,14 @@ class TSHScoreboardPlayerWidget(QGroupBox):
                             color_element = self.character_elements[i][2]
                             variant_element = self.character_elements[i][3]
                             characterIndex = 0
-                            for i in range(character_element.model().rowCount()):
-                                item = character_element.model().item(i).data(Qt.ItemDataRole.UserRole)
+                            target_main = main[0] if len(main) > 0 else ""
+                            base_target, _ = normalize_character_name(target_main)
+                            for j in range(character_element.model().rowCount()):
+                                item = character_element.model().item(j).data(Qt.ItemDataRole.UserRole)
                                 if item:
-                                    if item.get("en_name") == main[0]:
-                                        characterIndex = i
+                                    en = item.get("en_name")
+                                    if en == target_main or (base_target and en == base_target):
+                                        characterIndex = j
                                         break
                             if character_element.currentIndex() != characterIndex:
                                 character_element.setCurrentIndex(

@@ -15,6 +15,7 @@ from .Helpers.TSHDirHelper import TSHResolve
 import threading
 from .Helpers.TSHBadWordFilter import TSHBadWordFilter
 from .Helpers.TSHCustomPlayerCompleter import TSHCustomPlayerCompleter
+from .Helpers.TSHCharacterHelper import normalize_character_name, parse_mii_moveset
 from loguru import logger
 
 
@@ -49,6 +50,7 @@ class TSHTeamPlayerWidget(QGroupBox):
         self.teamNumber = teamNumber
 
         self.losers = False
+        self.moveset = None
 
         uic.loadUi(TSHResolve("src/layout/TSHTeamPlayer.ui"), self)
 
@@ -314,15 +316,37 @@ class TSHTeamPlayerWidget(QGroupBox):
                     data["assets"] = {}
 
                 data["skin"] = color.currentIndex()
-                if variant.currentData():
+
+                en_name = data.get("en_name", "")
+                is_mii = en_name in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter")
+                variant_text = variant.currentText().strip() if (variant and variant.isEditable()) else ""
+
+                if variant and variant.currentData():
                     data["variant"] = variant.currentData()
+                elif is_mii and (getattr(self, "moveset", None) or variant_text):
+                    ms = getattr(self, "moveset", None) or parse_mii_moveset(variant_text) or (variant_text if re.match(r"^[1-3]{4}$", variant_text) else None)
+                    if ms:
+                        data["variant"] = {"en_name": f"({ms})", "display_name": f"({ms})"}
+                        data["moveset"] = ms
+                    else:
+                        data["variant"] = {}
                 else:
                     data["variant"] = {}
+
+                if is_mii and getattr(self, "moveset", None):
+                    data["moveset"] = self.moveset
 
                 characters[i+1] = data
 
             StateManager.Set(
                 f"{self.path}.character", characters)
+
+            first_char = characters.get(1, {})
+            first_is_mii = first_char.get("en_name") in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter")
+            if first_is_mii and getattr(self, "moveset", None):
+                StateManager.Set(f"{self.path}.moveset", self.moveset)
+            else:
+                StateManager.Set(f"{self.path}.moveset", None)
 
             if includeMains:
                 StateManager.Set(
@@ -583,8 +607,9 @@ class TSHTeamPlayerWidget(QGroupBox):
                 [character_element, player_character, player_character_color, player_variant])
 
             player_character.currentIndexChanged.connect(
-                lambda x, element=player_character, target=player_character_color: [
+                lambda x, element=player_character, target=player_character_color, variant_target=player_variant: [
                     self.LoadSkinOptions(element, target),
+                    self.UpdateVariantOptions(element, variant_target),
                     self.CharactersChanged()
                 ]
             )
@@ -600,6 +625,17 @@ class TSHTeamPlayerWidget(QGroupBox):
                     self.CharactersChanged()
                 ]
             )
+
+            def on_variant_text_changed(text, element=player_character):
+                charData = element.currentData()
+                en_name = charData.get("en_name", "") if charData else ""
+                if en_name in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter"):
+                    ms = parse_mii_moveset(text) or (text.strip() if re.match(r"^[1-3]{4}$", text.strip()) else None)
+                    if ms != getattr(self, "moveset", None):
+                        self.moveset = ms
+                        self.CharactersChanged()
+
+            player_variant.currentTextChanged.connect(on_variant_text_changed)
 
             player_character.setCurrentIndex(0)
             player_character_color.setCurrentIndex(0)
@@ -746,18 +782,38 @@ class TSHTeamPlayerWidget(QGroupBox):
         else:
             target.setModel(QStandardItemModel())
 
-    def ReloadCharacters(self):
-        if len(TSHGameAssetManager.instance.variants) <= 0:
-            for container in self.findChildren(QComboBox, "variants"):
-                container.setVisible(False)
+    def UpdateVariantOptions(self, char_element: QComboBox, variant_element: QComboBox):
+        if not variant_element:
+            return
+        charData = char_element.currentData()
+        en_name = charData.get("en_name", "") if charData else ""
+        is_mii = en_name in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter")
+        has_variants = len(TSHGameAssetManager.instance.variants) > 0
+
+        if is_mii:
+            variant_element.setVisible(True)
+            variant_element.setToolTip("Mii Moveset (e.g. 1332)")
+            if variant_element.lineEdit():
+                variant_element.lineEdit().setPlaceholderText("Moveset (1332)")
+            if getattr(self, "moveset", None):
+                if variant_element.currentText() != self.moveset:
+                    variant_element.setEditText(self.moveset)
+        elif has_variants:
+            variant_element.setVisible(True)
+            variant_element.setToolTip("")
+            if variant_element.lineEdit():
+                variant_element.lineEdit().setPlaceholderText("")
         else:
-            for container in self.findChildren(QComboBox, "variants"):
-                container.setVisible(True)
+            variant_element.setVisible(False)
+            variant_element.setToolTip("")
+
+    def ReloadCharacters(self):
         for c in self.character_elements:
             c[1].setModel(TSHGameAssetManager.instance.characterModel)
             c[1].setIconSize(QSize(24, 24))
             c[1].setFixedHeight(32)
             c[3].setModel(TSHGameAssetManager.instance.variantModel)
+            self.UpdateVariantOptions(c[1], c[3])
 
     def SetupAutocomplete(self):
         if TSHPlayerDB.model:
@@ -889,18 +945,31 @@ class TSHTeamPlayerWidget(QGroupBox):
                 if controllerElement.currentIndex() != controllerIndex:
                     controllerElement.setCurrentIndex(controllerIndex)
 
+            if data.get("moveset"):
+                self.moveset = str(data.get("moveset")).strip()
+            elif data.get("mains"):
+                first_main = data.get("mains")[0] if isinstance(data.get("mains"), list) else None
+                _, extracted_ms = normalize_character_name(first_main)
+                if extracted_ms:
+                    self.moveset = extracted_ms
+
             if data.get("mains") and no_mains != True:
                 if type(data.get("mains")) == list:
+                    target_main = data.get("mains")[0]
+                    base_target, _ = normalize_character_name(target_main)
                     for element in self.character_elements:
                         character_element = element[1]
+                        variant_element = element[3]
                         characterIndex = 0
                         for i in range(character_element.model().rowCount()):
                             item = character_element.model().item(i).data(Qt.ItemDataRole.UserRole)
                             if item:
-                                if item.get("en_name") == data.get("mains")[0]:
+                                en = item.get("en_name")
+                                if en == target_main or (base_target and en == base_target):
                                     characterIndex = i
                                     break
                         character_element.setCurrentIndex(characterIndex)
+                        self.UpdateVariantOptions(character_element, variant_element)
                 elif type(data.get("mains")) == dict:
                     mains = data.get("mains").get(
                         TSHGameAssetManager.instance.selectedGame.get("codename"), [])
@@ -911,15 +980,19 @@ class TSHTeamPlayerWidget(QGroupBox):
                             color_element = self.character_elements[i][2]
                             variant_element = self.character_elements[i][3]
                             characterIndex = 0
-                            for i in range(character_element.model().rowCount()):
-                                item = character_element.model().item(i).data(Qt.ItemDataRole.UserRole)
+                            target_main = main[0] if len(main) > 0 else ""
+                            base_target, _ = normalize_character_name(target_main)
+                            for j in range(character_element.model().rowCount()):
+                                item = character_element.model().item(j).data(Qt.ItemDataRole.UserRole)
                                 if item:
-                                    if item.get("en_name") == main[0]:
-                                        characterIndex = i
+                                    en = item.get("en_name")
+                                    if en == target_main or (base_target and en == base_target):
+                                        characterIndex = j
                                         break
                             if character_element.currentIndex() != characterIndex:
                                 character_element.setCurrentIndex(
                                     characterIndex)
+                            self.UpdateVariantOptions(character_element, variant_element)
                             if len(main) > 1:
                                 if color_element.currentIndex() != int(main[1]):
                                     color_element.setCurrentIndex(int(main[1]))
@@ -961,6 +1034,8 @@ class TSHTeamPlayerWidget(QGroupBox):
 
     def DoClear(self, no_mains=False):
         with self.dataLock:
+            if not no_mains:
+                self.moveset = None
             for c in self.findChildren(QLineEdit):
                 if c.objectName() != "" and c.objectName() != 'qt_spinbox_lineedit':
                     if c.text() != "":

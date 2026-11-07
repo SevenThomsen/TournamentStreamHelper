@@ -15,8 +15,9 @@ from .TSHColorButton import TSHColorButton
 
 from .TournamentDataProvider.NexusRoomClient import NexusRoomClient
 from .TSHGameAssetManager import TSHGameAssetManager
-from.Helpers.TSHLocaleHelper import TSHLocaleHelper
+from .Helpers.TSHLocaleHelper import TSHLocaleHelper
 from .Helpers.TSHVersionHelper import add_beta_label
+from .Helpers.TSHCharacterHelper import normalize_character_name
 
 class TSHTeamBattleSignals(QObject):
     # GENERAL SIGNALS
@@ -1072,16 +1073,23 @@ class TSHTeamBattleWidget(QDockWidget):
                         p_id = player.get("id")
                         tag = player.get("tag", "")
 
-                        char_name = None
-                        if p_id in selections_by_player:
-                            char_name = selections_by_player[p_id].get("selected_character") or selections_by_player[p_id].get("character")
+                        sel_entry = selections_by_player.get(p_id) or {}
+                        bp_entry = blind_by_player.get(p_id) or {}
+                        is_starter_hidden = (live_state.get("round_number") == 1 and (not active_home_id or not active_away_id))
+                        char_name = sel_entry.get("selected_character") or sel_entry.get("character")
+                        if not char_name and not is_starter_hidden:
+                            char_name = bp_entry.get("selected_character") or bp_entry.get("character")
+
+                        base_char, moveset = normalize_character_name(char_name)
 
                         player_data = {
                             "gamerTag": tag,
                             "prefix": sponsor,
                         }
-                        if char_name:
-                            player_data["mains"] = [char_name]
+                        if base_char:
+                            player_data["mains"] = [base_char]
+                        if moveset:
+                            player_data["moveset"] = moveset
 
                         pw.SetData(player_data, dontLoadFromDB=True, clear=False)
 
