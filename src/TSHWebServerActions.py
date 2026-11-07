@@ -645,3 +645,61 @@ class WebServerActions(QThread):
             curr_game = 0
         sb.individualGameTracker.SetStage(curr_game, codename)
         return "OK"
+
+    @gui_thread_sync
+    def team_battle_stock_down(self, team: int):
+        from .TSHTeamBattleWidget import TSHTeamBattleWidget
+        tb = TSHTeamBattleWidget.instance
+        if not tb:
+            return {"status": "error", "message": "Team Battle widget not initialized"}
+
+        team_num = int(team)
+        widgets = tb.team1playerWidgets if team_num == 1 else tb.team2playerWidgets
+
+        target_pw = None
+        for pw in widgets:
+            if pw.IsActive() and not pw.IsEliminated() and pw.dynamicSpinner.value() > 0:
+                target_pw = pw
+                break
+        if not target_pw:
+            for pw in widgets:
+                if not pw.IsEliminated() and pw.dynamicSpinner.value() > 0:
+                    target_pw = pw
+                    break
+
+        if target_pw:
+            cur = target_pw.dynamicSpinner.value()
+            if cur > 0:
+                target_pw.dynamicSpinner.setValue(cur - 1)
+                logger.info(f"[TSH] Decremented Team {team_num} player stock to {cur - 1} ({target_pw.path})")
+                return {"status": "ok", "team": team_num, "player": target_pw.path, "stocks_remaining": cur - 1}
+
+        return {"status": "noop", "team": team_num, "message": "No active fighter with stocks found"}
+
+    @gui_thread_sync
+    def team_battle_set_active_mains(self, team: int, mains: dict):
+        from .TSHTeamBattleWidget import TSHTeamBattleWidget
+        tb = TSHTeamBattleWidget.instance
+        if not tb:
+            return {"status": "error", "message": "Team Battle widget not initialized"}
+
+        team_num = int(team)
+        widgets = tb.team1playerWidgets if team_num == 1 else tb.team2playerWidgets
+
+        target_pw = None
+        for pw in widgets:
+            if pw.IsActive() and not pw.IsEliminated():
+                target_pw = pw
+                break
+        if not target_pw:
+            for pw in widgets:
+                if not pw.IsEliminated():
+                    target_pw = pw
+                    break
+
+        if target_pw and mains:
+            target_pw.SetData({"mains": mains}, dontLoadFromDB=True, clear=False)
+            logger.info(f"[TSH] Updated Team {team_num} player mains ({target_pw.path}): {mains}")
+            return {"status": "ok", "team": team_num, "player": target_pw.path}
+
+        return {"status": "noop", "team": team_num}

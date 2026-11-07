@@ -231,6 +231,19 @@ class WebServer(QThread):
     def team_scoredown(scoreboardNumber, team):
         return WebServer.actions.team_scoredown(scoreboardNumber, team)
 
+    # Crew/Team Battle Endpoints
+    @app.route('/team-battle-player-stock-down')
+    def team_battle_player_stock_down():
+        team = request.args.get('team', '1')
+        return WebServer.actions.team_battle_stock_down(team)
+
+    @app.post('/team-battle-active-mains')
+    def team_battle_active_mains():
+        data = request.get_json() or {}
+        team = data.get('team', 1)
+        mains = data.get('mains', {})
+        return WebServer.actions.team_battle_set_active_mains(team, mains)
+
     @socketio.on('team_scoredown')
     def ws_team_scoredown(message):
         info = orjson.loads(message)

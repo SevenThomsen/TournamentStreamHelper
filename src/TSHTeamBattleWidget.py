@@ -53,6 +53,7 @@ class TSHTeamBattleSignals(QObject):
 # TODO: Add a handle to one press jump to the next player in line for active (just check to make sure it's within array bounds and not dead, and if it's at the end of the array, loop back around)
 # =====================================================
 class TSHTeamBattleWidget(QDockWidget):
+    instance: "TSHTeamBattleWidget" = None
     battleMode = TSHTeamBattleModeEnum.STOCK_POOL
 
     playerWidgets: List[TSHTeamPlayerWidget]      = []
@@ -64,6 +65,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
     def __init__(self, *args):
         super().__init__(*args)
+        TSHTeamBattleWidget.instance = self
         logger.info("BATTLE START")
         self.signals = TSHTeamBattleSignals()
 
