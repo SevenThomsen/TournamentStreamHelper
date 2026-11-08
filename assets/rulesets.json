@@ -1155,6 +1155,10 @@
               "value": "LAS"
             },
             {
+              "name": "ME",
+              "value": "ME"
+            },
+            {
               "name": "NA",
               "value": "NA"
             },
@@ -1167,12 +1171,28 @@
               "value": "PBE"
             },
             {
+              "name": "PH",
+              "value": "PH"
+            },
+            {
               "name": "RU",
               "value": "RU"
             },
             {
+              "name": "SG",
+              "value": "SG"
+            },
+            {
+              "name": "TH",
+              "value": "TH"
+            },
+            {
               "name": "TR",
               "value": "TR"
+            },
+            {
+              "name": "TW",
+              "value": "TW"
             }
           ]
         }
@@ -5177,6 +5197,23 @@
         }
       }
     },
+    "expand": []
+  },
+  {
+    "id": 211,
+    "videogameId": 28,
+    "name": "Blind Pick",
+    "description": null,
+    "isDefault": true,
+    "type": "standard",
+    "gameMode": 1,
+    "settings": {
+      "gameSetup": true,
+      "additionalFlags": {
+        "blindBeforeAll": true
+      }
+    },
+    "eventSettings": null,
     "expand": []
   }
 ]

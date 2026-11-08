@@ -949,16 +949,30 @@ class TSHTeamBattleWidget(QDockWidget):
             if fixture.get("away_score") is not None:
                 self.team2score.setValue(int(fixture.get("away_score")))
 
+            round_num = live_state.get("round_number")
+            if round_num is not None:
+                try:
+                    round_num = int(round_num)
+                except (ValueError, TypeError):
+                    pass
+            is_new_round = (self._last_round_number is not None and round_num is not None and round_num != self._last_round_number)
+
             home_stocks = live_state.get("home_stocks")
             if home_stocks is not None:
                 try:
-                    self.team1stocks.setValue(int(home_stocks))
+                    h_val = int(home_stocks)
+                    # Guard: Do not reset team stocks upward during an active ongoing round!
+                    if is_new_round or self._last_round_number is None or self.team1stocks.value() >= h_val:
+                        self.team1stocks.setValue(h_val)
                 except (ValueError, TypeError):
                     pass
             away_stocks = live_state.get("away_stocks")
             if away_stocks is not None:
                 try:
-                    self.team2stocks.setValue(int(away_stocks))
+                    a_val = int(away_stocks)
+                    # Guard: Do not reset team stocks upward during an active ongoing round!
+                    if is_new_round or self._last_round_number is None or self.team2stocks.value() >= a_val:
+                        self.team2stocks.setValue(a_val)
                 except (ValueError, TypeError):
                     pass
 
@@ -1051,6 +1065,7 @@ class TSHTeamBattleWidget(QDockWidget):
             away_round_start = live_state.get("away_round_start_stocks")
             stk_default = stocks_per_player
 
+            current_effective_active = {}
             for team_idx, (team_players, player_widgets, active_id, team_info, round_start_stk) in enumerate([
                 (home_players, self.team1playerWidgets, active_home_id, home_team, home_round_start),
                 (away_players, self.team2playerWidgets, active_away_id, away_team, away_round_start)
@@ -1073,21 +1088,25 @@ class TSHTeamBattleWidget(QDockWidget):
                         team_selections.sort(key=lambda item: item[1].get("slot_order", 0))
                         effective_active_id = team_selections[-1][0].get("id")
 
+                if effective_active_id is not None:
+                    effective_active_id = str(effective_active_id)
+                current_effective_active[team_idx] = effective_active_id
+
                 for p_idx, player in enumerate(team_players):
                     if p_idx < len(player_widgets):
                         pw = player_widgets[p_idx]
-                        p_id = player.get("id")
+                        p_id = str(player.get("id")) if player.get("id") is not None else None
                         tag = player.get("tag", "")
 
-                        sel_entry = selections_by_player.get(p_id) or {}
-                        bp_entry = blind_by_player.get(p_id) or {}
+                        sel_entry = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id) or {}
+                        bp_entry = blind_by_player.get(player.get("id")) or blind_by_player.get(p_id) or {}
                         is_starter_hidden = (live_state.get("round_number") == 1 and (not active_home_id or not active_away_id))
                         char_name = sel_entry.get("selected_character") or sel_entry.get("character")
                         if not char_name and not is_starter_hidden:
                             char_name = bp_entry.get("selected_character") or bp_entry.get("character")
 
                         base_char, moveset = normalize_character_name(char_name)
-                        is_active = (p_id == effective_active_id) if effective_active_id else False
+                        is_active = (p_id == effective_active_id) if (effective_active_id and p_id) else False
 
                         player_data = {
                             "gamerTag": tag,
@@ -1118,10 +1137,11 @@ class TSHTeamBattleWidget(QDockWidget):
                         pw.SetActiveStatus(is_active)
 
                         # Set player stocks and eliminated status
-                        sel = selections_by_player.get(p_id)
-                        round_num = live_state.get("round_number")
-                        is_new_round = (self._last_round_number is not None and round_num is not None and round_num != self._last_round_number)
-                        is_new_active = (getattr(self, "_last_effective_active", {}).get(team_idx) != effective_active_id)
+                        sel = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id)
+                        last_active = getattr(self, "_last_effective_active", {}).get(team_idx)
+                        if last_active is not None:
+                            last_active = str(last_active)
+                        is_new_active = (last_active != effective_active_id)
 
                         if sel is not None:
                             # Player has entered the match / been sent in
@@ -1150,11 +1170,8 @@ class TSHTeamBattleWidget(QDockWidget):
                             pw._previous_stock = stk_default
 
             # Record active round and player tracking
-            self._last_round_number = live_state.get("round_number")
-            if not hasattr(self, "_last_effective_active"):
-                self._last_effective_active = {}
-            self._last_effective_active[0] = active_home_id
-            self._last_effective_active[1] = active_away_id
+            self._last_round_number = round_num
+            self._last_effective_active = current_effective_active
 
             # Save double blind picks to StateManager for dedicated stream overlays / scenes
             StateManager.Set("team_battle.blind_picks", blind_picks)
