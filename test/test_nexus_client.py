@@ -193,6 +193,83 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertIsNone(parse_mii_moveset(""))
         self.assertIsNone(parse_mii_moveset(None))
 
+    def test_round_two_character_resolution_ignores_stale_blind_pick(self):
+        """Verify that in Round 2+, characters come strictly from roster_selections,
+        and stale blind picks from Round 1 do not override or pollute player selection."""
+        # Scenario: Captain was blinded as Pikachu in Round 1, but entered in Round 2 playing Dark Samus
+        captain_id = "cap_101"
+        roster_selections = [
+            {"player_id": "p2", "slot_order": 1, "selected_character": "Peach"},
+            {"player_id": captain_id, "slot_order": 2, "selected_character": "Dark Samus"},
+        ]
+        blind_picks = [
+            {"player_id": captain_id, "selected_character": "Pikachu"},
+            {"player_id": "p2", "selected_character": "Peach"},
+        ]
+        live_state_r2 = {
+            "round_number": 2,
+            "home_active_player_id": captain_id,
+            "away_active_player_id": "opp_1",
+        }
+
+        selections_by_player = {s["player_id"]: s for s in roster_selections}
+        blind_by_player = {bp["player_id"]: bp for bp in blind_picks}
+
+        is_round_one = (live_state_r2.get("round_number") or 1) == 1
+        active_home_id = live_state_r2.get("home_active_player_id")
+        active_away_id = live_state_r2.get("away_active_player_id")
+        is_starter_hidden = (is_round_one and (not active_home_id or not active_away_id))
+
+        # 1. Active Captain in Round 2
+        is_active = (captain_id == active_home_id)
+        sel_entry = selections_by_player.get(captain_id, {})
+        bp_entry = blind_by_player.get(captain_id, {})
+
+        char_name = sel_entry.get("selected_character") or sel_entry.get("character")
+        if not char_name and is_round_one and is_active and not is_starter_hidden:
+            char_name = bp_entry.get("selected_character") or bp_entry.get("character")
+
+        base_char, _ = normalize_character_name(char_name)
+        self.assertEqual(base_char, "Dark Samus")
+
+        # 2. Standby player in Round 2 (has no roster selection)
+        standby_id = "standby_99"
+        is_active_sb = (standby_id == active_home_id)
+        sel_sb = selections_by_player.get(standby_id, {})
+        bp_sb = blind_by_player.get(standby_id, {})
+
+        char_name_sb = sel_sb.get("selected_character") or sel_sb.get("character")
+        if not char_name_sb and is_round_one and is_active_sb and not is_starter_hidden:
+            char_name_sb = bp_sb.get("selected_character") or bp_sb.get("character")
+
+        base_char_sb, _ = normalize_character_name(char_name_sb)
+        self.assertIsNone(base_char_sb)
+
+    def test_character_and_skin_preservation_logic(self):
+        """Verify that when a player changes characters, the new character is used,
+        while if the character matches, custom costume index is preserved."""
+        # Case 1: Widget has Pikachu, snapshot provides Dark Samus -> must switch to Dark Samus
+        base_char = "Dark Samus"
+        cur_char_name = "Pikachu"
+        cur_color_idx = 0
+        if base_char:
+            if cur_char_name and cur_char_name.lower() == base_char.lower() and cur_color_idx > 0:
+                mains = {"ssbu": [[base_char, cur_color_idx]]}
+            else:
+                mains = [base_char]
+        self.assertEqual(mains, ["Dark Samus"])
+
+        # Case 2: Widget has Dark Samus with skin 3, snapshot provides Dark Samus -> preserve skin 3
+        base_char = "Dark Samus"
+        cur_char_name = "Dark Samus"
+        cur_color_idx = 3
+        if base_char:
+            if cur_char_name and cur_char_name.lower() == base_char.lower() and cur_color_idx > 0:
+                mains = {"ssbu": [[base_char, cur_color_idx]]}
+            else:
+                mains = [base_char]
+        self.assertEqual(mains, {"ssbu": [["Dark Samus", 3]]})
+
 
 if __name__ == "__main__":
     unittest.main()

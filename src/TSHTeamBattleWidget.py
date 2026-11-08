@@ -1040,8 +1040,19 @@ class TSHTeamBattleWidget(QDockWidget):
                 TSHGameAssetManager.instance.SetGame(game_target)
 
             # Selections & Characters
-            selections_by_player = {s.get("player_id"): s for s in roster_selections if s.get("player_id")}
-            blind_by_player = {bp.get("player_id"): bp for bp in blind_picks if bp.get("player_id")}
+            selections_by_player = {}
+            for s in roster_selections:
+                pid = s.get("player_id")
+                if pid is not None:
+                    selections_by_player[pid] = s
+                    selections_by_player[str(pid)] = s
+
+            blind_by_player = {}
+            for bp in blind_picks:
+                pid = bp.get("player_id")
+                if pid is not None:
+                    blind_by_player[pid] = bp
+                    blind_by_player[str(pid)] = bp
 
             active_home_id = live_state.get("home_active_player_id")
             active_away_id = live_state.get("away_active_player_id")
@@ -1051,11 +1062,18 @@ class TSHTeamBattleWidget(QDockWidget):
                 active_home_id = None
                 active_away_id = None
                 roster_selections = [s for s in roster_selections if s.get("slot_order") != 1]
-                selections_by_player = {s.get("player_id"): s for s in roster_selections if s.get("player_id")}
+                selections_by_player = {}
+                for s in roster_selections:
+                    pid = s.get("player_id")
+                    if pid is not None:
+                        selections_by_player[pid] = s
+                        selections_by_player[str(pid)] = s
 
             def sort_key(p):
-                sel = selections_by_player.get(p.get("id"), {})
-                return sel.get("slot_order", 999)
+                pid = p.get("id")
+                sel = selections_by_player.get(pid) or selections_by_player.get(str(pid), {})
+                slot = sel.get("slot_order", 999)
+                return (slot, str(p.get("tag", "")).lower(), str(pid or ""))
 
             home_players.sort(key=sort_key)
             away_players.sort(key=sort_key)
@@ -1098,25 +1116,29 @@ class TSHTeamBattleWidget(QDockWidget):
                         p_id = str(player.get("id")) if player.get("id") is not None else None
                         tag = player.get("tag", "")
 
+                        is_active = (p_id == effective_active_id) if (effective_active_id and p_id) else False
                         sel_entry = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id) or {}
                         bp_entry = blind_by_player.get(player.get("id")) or blind_by_player.get(p_id) or {}
-                        is_starter_hidden = (live_state.get("round_number") == 1 and (not active_home_id or not active_away_id))
+                        is_round_one = (live_state.get("round_number") or 1) == 1
+                        is_starter_hidden = (is_round_one and (not active_home_id or not active_away_id))
+
+                        # Double blind is only for round 1 starter reveal; round 2+ selections come strictly
+                        # from roster_selections, and bench/standby players never show blind picks.
                         char_name = sel_entry.get("selected_character") or sel_entry.get("character")
-                        if not char_name and not is_starter_hidden:
+                        if not char_name and is_round_one and is_active and not is_starter_hidden:
                             char_name = bp_entry.get("selected_character") or bp_entry.get("character")
 
                         base_char, moveset = normalize_character_name(char_name)
-                        is_active = (p_id == effective_active_id) if (effective_active_id and p_id) else False
 
                         player_data = {
                             "gamerTag": tag,
                             "prefix": sponsor,
                         }
 
-                        # Preserve live active fighter's costume skin / character if already set from live match
+                        # Check existing widget character and skin
                         cur_char_name = None
                         cur_color_idx = 0
-                        if is_active and pw.character_elements:
+                        if pw.character_elements:
                             char_elem = pw.character_elements[0][1]
                             color_elem = pw.character_elements[0][2]
                             cdata = char_elem.currentData()
@@ -1124,14 +1146,23 @@ class TSHTeamBattleWidget(QDockWidget):
                                 cur_char_name = cdata.get("en_name")
                                 cur_color_idx = color_elem.currentIndex()
 
-                        if is_active and cur_char_name:
-                            # Keep the live fighter and costume skin
+                        if base_char:
+                            # If the widget already has this same character selected, preserve custom costume color index
+                            if cur_char_name and cur_char_name.lower() == base_char.lower() and cur_color_idx > 0:
+                                player_data["mains"] = {"ssbu": [[base_char, cur_color_idx]]}
+                            else:
+                                player_data["mains"] = [base_char]
+                        elif is_active and cur_char_name:
+                            # Preserve manually selected character in TSH if snapshot does not specify one
                             player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
-                        elif base_char:
-                            player_data["mains"] = [base_char]
+                        else:
+                            # No character selected for this player
+                            player_data["mains"] = [""]
 
                         if moveset:
                             player_data["moveset"] = moveset
+                        else:
+                            player_data["moveset"] = ""
 
                         pw.SetData(player_data, dontLoadFromDB=True, clear=False)
                         pw.SetActiveStatus(is_active)
@@ -1174,15 +1205,19 @@ class TSHTeamBattleWidget(QDockWidget):
             self._last_effective_active = current_effective_active
 
             # Save double blind picks to StateManager for dedicated stream overlays / scenes
-            StateManager.Set("team_battle.blind_picks", blind_picks)
+            # During Round 1 starter selection before reveal, do not leak blind picks to stream state
+            is_round_one = (live_state.get("round_number") or 1) == 1
+            is_starter_hidden = (is_round_one and (not active_home_id or not active_away_id))
+            exported_blind_picks = [] if is_starter_hidden else blind_picks
+            StateManager.Set("team_battle.blind_picks", exported_blind_picks)
             home_team_id = home_team.get("id")
             away_team_id = away_team.get("id")
             team1_blind_picks = [
-                bp for bp in blind_picks
+                bp for bp in exported_blind_picks
                 if bp.get("team_id") == home_team_id or bp.get("side") == "home" or bp.get("team_side") == "home"
             ]
             team2_blind_picks = [
-                bp for bp in blind_picks
+                bp for bp in exported_blind_picks
                 if bp.get("team_id") == away_team_id or bp.get("side") == "away" or bp.get("team_side") == "away"
             ]
             StateManager.Set("team_battle.team.1.blind_picks", team1_blind_picks)
