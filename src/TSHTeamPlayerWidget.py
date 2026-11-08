@@ -996,9 +996,6 @@ class TSHTeamPlayerWidget(QGroupBox):
                             if len(main) > 1:
                                 if color_element.currentIndex() != int(main[1]):
                                     color_element.setCurrentIndex(int(main[1]))
-                            else:
-                                if color_element.currentIndex() != 0:
-                                    color_element.setCurrentIndex(0)
                             
                             variantIndex = 0
                             if variant_element:

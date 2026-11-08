@@ -398,6 +398,8 @@ class TSHTeamBattleWidget(QDockWidget):
         # Nexus Game Transition Delay State (holds completed game on screen for 15s)
         self._last_game_id = None
         self._last_game_order = None
+        self._last_round_number = None
+        self._last_effective_active = {}
         self._last_home_score = None
         self._last_away_score = None
         self._pending_snapshot = None
@@ -815,6 +817,8 @@ class TSHTeamBattleWidget(QDockWidget):
         self._pending_snapshot = None
         self._last_game_id = None
         self._last_game_order = None
+        self._last_round_number = None
+        self._last_effective_active = {}
         self._last_home_score = None
         self._last_away_score = None
         self._transition_seconds_left = 0
@@ -1083,23 +1087,42 @@ class TSHTeamBattleWidget(QDockWidget):
                             char_name = bp_entry.get("selected_character") or bp_entry.get("character")
 
                         base_char, moveset = normalize_character_name(char_name)
+                        is_active = (p_id == effective_active_id) if effective_active_id else False
 
                         player_data = {
                             "gamerTag": tag,
                             "prefix": sponsor,
                         }
-                        if base_char:
+
+                        # Preserve live active fighter's costume skin / character if already set from live match
+                        cur_char_name = None
+                        cur_color_idx = 0
+                        if is_active and pw.character_elements:
+                            char_elem = pw.character_elements[0][1]
+                            color_elem = pw.character_elements[0][2]
+                            cdata = char_elem.currentData()
+                            if cdata and cdata.get("en_name"):
+                                cur_char_name = cdata.get("en_name")
+                                cur_color_idx = color_elem.currentIndex()
+
+                        if is_active and cur_char_name:
+                            # Keep the live fighter and costume skin
+                            player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
+                        elif base_char:
                             player_data["mains"] = [base_char]
+
                         if moveset:
                             player_data["moveset"] = moveset
 
                         pw.SetData(player_data, dontLoadFromDB=True, clear=False)
-
-                        is_active = (p_id == effective_active_id) if effective_active_id else False
                         pw.SetActiveStatus(is_active)
 
                         # Set player stocks and eliminated status
                         sel = selections_by_player.get(p_id)
+                        round_num = live_state.get("round_number")
+                        is_new_round = (self._last_round_number is not None and round_num is not None and round_num != self._last_round_number)
+                        is_new_active = (getattr(self, "_last_effective_active", {}).get(team_idx) != effective_active_id)
+
                         if sel is not None:
                             # Player has entered the match / been sent in
                             p_stocks = sel.get("stocks_remaining")
@@ -1111,14 +1134,27 @@ class TSHTeamBattleWidget(QDockWidget):
                             else:
                                 cur_stk = stk_default
 
-                            pw.dynamicSpinner.setValue(cur_stk)
-                            pw.SetEliminatedStatus(cur_stk <= 0)
-                            pw._previous_stock = cur_stk
+                            current_val = pw.dynamicSpinner.value()
+                            # Guard: Do not reset stocks upward during an active ongoing round!
+                            if is_active and not is_new_round and not is_new_active and 0 <= current_val < cur_stk:
+                                # Keep the in-game decremented stocks
+                                pass
+                            else:
+                                pw.dynamicSpinner.setValue(cur_stk)
+                                pw.SetEliminatedStatus(cur_stk <= 0)
+                                pw._previous_stock = cur_stk
                         else:
                             # Bench player: has not been sent in yet
                             pw.dynamicSpinner.setValue(stk_default)
                             pw.SetEliminatedStatus(False)
                             pw._previous_stock = stk_default
+
+            # Record active round and player tracking
+            self._last_round_number = live_state.get("round_number")
+            if not hasattr(self, "_last_effective_active"):
+                self._last_effective_active = {}
+            self._last_effective_active[0] = active_home_id
+            self._last_effective_active[1] = active_away_id
 
             # Save double blind picks to StateManager for dedicated stream overlays / scenes
             StateManager.Set("team_battle.blind_picks", blind_picks)
