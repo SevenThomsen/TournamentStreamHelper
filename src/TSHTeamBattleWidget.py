@@ -921,7 +921,11 @@ class TSHTeamBattleWidget(QDockWidget):
 
     def _OnGameAssetsLoaded(self):
         if getattr(self, "_last_snapshot", None):
-            logger.info("[TSHTeamBattleWidget] Game assets loaded; re-applying live match data")
+            logger.info("[TSHTeamBattleWidget] Game assets loaded; scheduling re-application of live match data")
+            QTimer.singleShot(0, self._ReapplyNexusSnapshot)
+
+    def _ReapplyNexusSnapshot(self):
+        if getattr(self, "_last_snapshot", None):
             self._DoApplyNexusData(self._last_snapshot)
 
     def _DoApplyNexusData(self, snapshot: dict):
@@ -1092,6 +1096,11 @@ class TSHTeamBattleWidget(QDockWidget):
 
             home_players.sort(key=sort_key)
             away_players.sort(key=sort_key)
+
+            # Ensure all player widgets are using the latest character models
+            if TSHGameAssetManager.instance and TSHGameAssetManager.instance.characterModel:
+                for pw in self.team1playerWidgets + self.team2playerWidgets:
+                    pw.ReloadCharacters()
 
             # 5. Populate Team 1 & Team 2 Player Widgets
             home_round_start = live_state.get("home_round_start_stocks")

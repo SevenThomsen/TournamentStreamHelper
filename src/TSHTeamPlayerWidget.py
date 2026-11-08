@@ -809,11 +809,39 @@ class TSHTeamPlayerWidget(QGroupBox):
 
     def ReloadCharacters(self):
         for c in self.character_elements:
-            c[1].setModel(TSHGameAssetManager.instance.characterModel)
-            c[1].setIconSize(QSize(24, 24))
-            c[1].setFixedHeight(32)
-            c[3].setModel(TSHGameAssetManager.instance.variantModel)
+            cur_data = c[1].currentData()
+            cur_en = cur_data.get("en_name") if isinstance(cur_data, dict) else None
+            cur_skin = c[2].currentIndex() if c[2] else 0
+
+            if TSHGameAssetManager.instance.characterModel:
+                with QSignalBlocker(c[1]):
+                    c[1].setModel(TSHGameAssetManager.instance.characterModel)
+                    c[1].setIconSize(QSize(24, 24))
+                    c[1].setFixedHeight(32)
+
+            if c[3] and TSHGameAssetManager.instance.variantModel:
+                with QSignalBlocker(c[3]):
+                    c[3].setModel(TSHGameAssetManager.instance.variantModel)
             self.UpdateVariantOptions(c[1], c[3])
+
+            if cur_en and c[1].model():
+                new_idx = 0
+                clean_target = cur_en.strip().lower()
+                for i in range(c[1].model().rowCount()):
+                    itm = c[1].model().item(i).data(Qt.ItemDataRole.UserRole)
+                    if itm:
+                        if clean_target in (str(itm.get("en_name") or "").lower(),
+                                            str(itm.get("name") or "").lower(),
+                                            str(itm.get("codename") or "").lower()):
+                            new_idx = i
+                            break
+                if new_idx > 0:
+                    c[1].setCurrentIndex(new_idx)
+                    self.LoadSkinOptions(c[1], c[2])
+                    if c[2] and 0 <= cur_skin < c[2].count():
+                        c[2].setCurrentIndex(cur_skin)
+                    self.UpdateVariantOptions(c[1], c[3])
+                    self.CharactersChanged()
 
     def SetupAutocomplete(self):
         if TSHPlayerDB.model:
@@ -958,6 +986,12 @@ class TSHTeamPlayerWidget(QGroupBox):
                     target_clean = str(base_tgt or char_target or "").strip().lower()
                     if not target_clean:
                         return 0
+                    if TSHGameAssetManager.instance and TSHGameAssetManager.instance.characterModel:
+                        if char_elem.model() != TSHGameAssetManager.instance.characterModel:
+                            with QSignalBlocker(char_elem):
+                                char_elem.setModel(TSHGameAssetManager.instance.characterModel)
+                                char_elem.setIconSize(QSize(24, 24))
+                                char_elem.setFixedHeight(32)
                     for idx in range(char_elem.model().rowCount()):
                         itm = char_elem.model().item(idx).data(Qt.ItemDataRole.UserRole)
                         if itm:

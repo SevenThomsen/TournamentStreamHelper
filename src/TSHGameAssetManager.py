@@ -333,9 +333,9 @@ class TSHGameAssetManager(QObject):
                                 break
 
                         assetsObj = gameObj.get(
-                            "assets", {}).get(assetsKey, None)
-                        files = sorted(os.listdir(
-                            './user_data/games/'+game_dir+'/'+assetsKey))
+                            "assets", {}).get(assetsKey, None) or {}
+                        asset_dir_path = './user_data/games/'+game_dir+'/'+assetsKey if assetsKey else ''
+                        files = sorted(os.listdir(asset_dir_path)) if asset_dir_path and os.path.isdir(asset_dir_path) else []
 
                         self.parent().stockIcons = {}
 
@@ -671,16 +671,16 @@ class TSHGameAssetManager(QObject):
                                 break
 
                         assetsObj = gameObj.get(
-                            "assets", {}).get(assetsKey, None)
-                        files = sorted(os.listdir(
-                            './user_data/games/'+game_dir+'/'+assetsKey))
+                            "assets", {}).get(assetsKey, None) or {}
+                        asset_dir_path = './user_data/games/'+game_dir+'/'+assetsKey if assetsKey else ''
+                        files = sorted(os.listdir(asset_dir_path)) if asset_dir_path and os.path.isdir(asset_dir_path) else []
 
                         self.parent.stockIcons = {}
 
                         for c in self.parent.characters.keys():
                             self.parent.stockIcons[c] = {}
 
-                            pattern = re.compile(f'({assetsObj.get("prefix", "")})({self.parent().characters[c].get("codename")})({assetsObj.get("postfix", "")})([0-9]*)\\.([A-Za-z0-9]+)')
+                            pattern = re.compile(f'({assetsObj.get("prefix", "")})({self.parent.characters[c].get("codename")})({assetsObj.get("postfix", "")})([0-9]*)\\.([A-Za-z0-9]+)')
                             filteredFiles = \
                                 [f for f in files if pattern.match(f)]
 
