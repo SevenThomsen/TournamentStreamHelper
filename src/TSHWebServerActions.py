@@ -696,8 +696,16 @@ class WebServerActions(QThread):
                 if not pw.IsEliminated():
                     target_pw = pw
                     break
+        if not target_pw and widgets:
+            for pw in widgets:
+                if pw.IsActive():
+                    target_pw = pw
+                    break
+            if not target_pw:
+                target_pw = widgets[0]
 
         if target_pw and mains:
+            mains = self._resolve_mains(mains)
             target_pw.SetData({"mains": mains}, dontLoadFromDB=True, clear=False)
             logger.info(f"[TSH] Updated Team {team_num} player mains ({target_pw.path}): {mains}")
             return {"status": "ok", "team": team_num, "player": target_pw.path}
