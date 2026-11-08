@@ -954,65 +954,73 @@ class TSHTeamPlayerWidget(QGroupBox):
                     self.moveset = extracted_ms
 
             if data.get("mains") and no_mains != True:
+                def _match_char_index(char_elem, char_target, base_tgt):
+                    target_clean = str(base_tgt or char_target or "").strip().lower()
+                    if not target_clean:
+                        return 0
+                    for idx in range(char_elem.model().rowCount()):
+                        itm = char_elem.model().item(idx).data(Qt.ItemDataRole.UserRole)
+                        if itm:
+                            en = str(itm.get("en_name") or "").strip().lower()
+                            nm = str(itm.get("name") or "").strip().lower()
+                            cd = str(itm.get("codename") or "").strip().lower()
+                            if target_clean in (en, nm, cd):
+                                return idx
+                    return 0
+
                 if type(data.get("mains")) == list:
                     target_main = data.get("mains")[0]
                     base_target, _ = normalize_character_name(target_main)
                     for element in self.character_elements:
                         character_element = element[1]
+                        color_element = element[2]
                         variant_element = element[3]
-                        characterIndex = 0
-                        for i in range(character_element.model().rowCount()):
-                            item = character_element.model().item(i).data(Qt.ItemDataRole.UserRole)
-                            if item:
-                                en = item.get("en_name")
-                                if en == target_main or (base_target and en == base_target):
-                                    characterIndex = i
-                                    break
+                        characterIndex = _match_char_index(character_element, target_main, base_target)
                         character_element.setCurrentIndex(characterIndex)
+                        self.LoadSkinOptions(character_element, color_element)
                         self.UpdateVariantOptions(character_element, variant_element)
+                        self.CharactersChanged()
                 elif type(data.get("mains")) == dict:
-                    mains = data.get("mains").get(
-                        TSHGameAssetManager.instance.selectedGame.get("codename"), [])
+                    current_game_code = TSHGameAssetManager.instance.selectedGame.get("codename")
+                    mains = data.get("mains").get(current_game_code)
+                    if mains is None:
+                        for fb_key in ("ssbu", "ultimate", "smash"):
+                            if fb_key in data.get("mains"):
+                                mains = data.get("mains")[fb_key]
+                                break
+                    mains = mains or []
 
                     for i, main in enumerate(mains):
                         if i < len(self.character_elements):
                             character_element = self.character_elements[i][1]
                             color_element = self.character_elements[i][2]
                             variant_element = self.character_elements[i][3]
-                            characterIndex = 0
                             target_main = main[0] if len(main) > 0 else ""
                             base_target, _ = normalize_character_name(target_main)
-                            for j in range(character_element.model().rowCount()):
-                                item = character_element.model().item(j).data(Qt.ItemDataRole.UserRole)
-                                if item:
-                                    en = item.get("en_name")
-                                    if en == target_main or (base_target and en == base_target):
-                                        characterIndex = j
-                                        break
-                            if character_element.currentIndex() != characterIndex:
-                                character_element.setCurrentIndex(
-                                    characterIndex)
+                            characterIndex = _match_char_index(character_element, target_main, base_target)
+                            character_element.setCurrentIndex(characterIndex)
+                            self.LoadSkinOptions(character_element, color_element)
                             self.UpdateVariantOptions(character_element, variant_element)
                             if len(main) > 1:
-                                if color_element.currentIndex() != int(main[1]):
-                                    color_element.setCurrentIndex(int(main[1]))
-                            
+                                color_idx = int(main[1])
+                                if 0 <= color_idx < color_element.count():
+                                    color_element.setCurrentIndex(color_idx)
+
                             variantIndex = 0
                             if variant_element:
-                                for i in range(variant_element.model().rowCount()):
-                                    item = variant_element.model().item(i).data(Qt.ItemDataRole.UserRole)
+                                for j in range(variant_element.model().rowCount()):
+                                    item = variant_element.model().item(j).data(Qt.ItemDataRole.UserRole)
                                     if item:
-                                        if len(main) >= 3 :
+                                        if len(main) >= 3:
                                             if item.get("en_name") == main[2]:
-                                                variantIndex = i
+                                                variantIndex = j
                                                 break
                                         else:
                                             variantIndex = 0
                                             break
-                            else:
-                                variantIndex = 0
-                            if variant_element.currentIndex() != variantIndex:
+                            if variant_element and variant_element.currentIndex() != variantIndex:
                                 variant_element.setCurrentIndex(variantIndex)
+                            self.CharactersChanged()
 
             if data.get("city"):
                 StateManager.Set(f"{self.path}.city", data.get("city", ""))

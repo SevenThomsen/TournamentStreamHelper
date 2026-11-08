@@ -270,6 +270,123 @@ class TestNexusRoomClient(unittest.TestCase):
                 mains = [base_char]
         self.assertEqual(mains, {"ssbu": [["Dark Samus", 3]]})
 
+    def test_in_progress_round_one_stage_strike_preserves_starters(self):
+        """Connecting during Round 1 stage striking (or match) must NOT wipe starters,
+        even if one team active player ID is temporarily null."""
+        live_state = {
+            "round_number": 1,
+            "phase": "stage_strike",
+            "home_active_player_id": "p1_home",
+            "away_active_player_id": None,
+        }
+        roster_selections = [
+            {"player_id": "p1_home", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 3},
+            {"player_id": "p1_away", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 3},
+        ]
+        active_home_id = live_state.get("home_active_player_id")
+        active_away_id = live_state.get("away_active_player_id")
+
+        is_round_one = (live_state.get("round_number") or 1) == 1
+        is_starter_selection_phase = live_state.get("phase") in ("blind_pick", "player_select")
+        if is_round_one and is_starter_selection_phase and (not active_home_id or not active_away_id):
+            active_home_id = None
+            active_away_id = None
+            roster_selections = [s for s in roster_selections if s.get("slot_order") != 1]
+
+        # Starters must NOT have been wiped out because phase is stage_strike!
+        self.assertEqual(len(roster_selections), 2)
+        self.assertEqual(roster_selections[0]["selected_character"], "Mario")
+        self.assertEqual(roster_selections[1]["selected_character"], "Fox")
+
+    def test_in_progress_round_two_loads_all_sent_in_players_characters(self):
+        """Connecting to an in-progress Round 2 match must load characters for:
+        - The Round 1 starter who was eliminated (slot 1)
+        - The surviving starter on the opposing team (slot 1)
+        - The newly sent-in Round 2 player (slot 2)
+        While leaving standby players unselected."""
+        live_state_r2 = {
+            "round_number": 2,
+            "phase": "stage_strike",
+            "home_active_player_id": "alpha_p2",
+            "away_active_player_id": "beta_p1",
+        }
+        roster_selections = [
+            {"player_id": "alpha_p1", "slot_order": 1, "selected_character": "Pikachu", "stocks_remaining": 0},
+            {"player_id": "alpha_p2", "slot_order": 2, "selected_character": "Dark Samus", "stocks_remaining": 3},
+            {"player_id": "beta_p1", "slot_order": 1, "selected_character": "Daisy", "stocks_remaining": 2},
+        ]
+        blind_picks = [
+            {"player_id": "alpha_p1", "selected_character": "Pikachu"},
+            {"player_id": "beta_p1", "selected_character": "Daisy"},
+        ]
+
+        selections_by_player = {s["player_id"]: s for s in roster_selections}
+        blind_by_player = {bp["player_id"]: bp for bp in blind_picks}
+
+        # Alpha Player 1 (eliminated starter from round 1)
+        sel1 = selections_by_player.get("alpha_p1", {})
+        bp1 = blind_by_player.get("alpha_p1", {})
+        raw1 = sel1.get("selected_character") or sel1.get("character")
+        if not raw1 and (sel1.get("slot_order") == 1):
+            raw1 = bp1.get("selected_character")
+        char1, _ = normalize_character_name(raw1)
+        self.assertEqual(char1, "Pikachu")
+
+        # Alpha Player 2 (active Round 2 fighter)
+        sel2 = selections_by_player.get("alpha_p2", {})
+        raw2 = sel2.get("selected_character") or sel2.get("character")
+        char2, _ = normalize_character_name(raw2)
+        self.assertEqual(char2, "Dark Samus")
+
+        # Beta Player 1 (surviving starter from round 1)
+        sel_b1 = selections_by_player.get("beta_p1", {})
+        raw_b1 = sel_b1.get("selected_character") or sel_b1.get("character")
+        char_b1, _ = normalize_character_name(raw_b1)
+        self.assertEqual(char_b1, "Daisy")
+
+        # Standby bench player
+        sel_sb = selections_by_player.get("alpha_p3", {})
+        bp_sb = blind_by_player.get("alpha_p3", {})
+        raw_sb = sel_sb.get("selected_character") or sel_sb.get("character")
+        if raw_sb in ("", "Character not selected", "None", None):
+            raw_sb = None
+        if not raw_sb and sel_sb.get("slot_order") == 1:
+            raw_sb = bp_sb.get("selected_character")
+        char_sb, _ = normalize_character_name(raw_sb)
+        self.assertIsNone(char_sb)
+
+    def test_team_player_widget_set_data_triggers_skin_and_characters_changed(self):
+        """Verify that SetData on TSHTeamPlayerWidget loads skins and updates StateManager
+        even when characterIndex does not trigger a change event."""
+        from src.TSHTeamPlayerWidget import TSHTeamPlayerWidget
+        from PyQt6.QtWidgets import QWidget
+        from src.StateManager import StateManager
+
+        pw = TSHTeamPlayerWidget(1, 1, "score.team.1.player.1")
+
+        # Mock character elements
+        mock_skin_loaded = []
+        mock_char_changed = []
+
+        orig_load_skin = pw.LoadSkinOptions
+        orig_char_changed = pw.CharactersChanged
+
+        def tracking_load_skin(elem, target):
+            mock_skin_loaded.append(True)
+            return orig_load_skin(elem, target)
+
+        def tracking_char_changed(*args, **kwargs):
+            mock_char_changed.append(True)
+            return orig_char_changed(*args, **kwargs)
+
+        pw.LoadSkinOptions = tracking_load_skin
+        pw.CharactersChanged = tracking_char_changed
+
+        pw.SetData({"mains": ["Dark Samus"]}, dontLoadFromDB=True, clear=False)
+
+        self.assertGreater(len(mock_skin_loaded), 0)
+        self.assertGreater(len(mock_char_changed), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

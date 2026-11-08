@@ -396,6 +396,7 @@ class TSHTeamBattleWidget(QDockWidget):
             app.aboutToQuit.connect(self.nexusClient.disconnect)
 
         # Nexus Game Transition Delay State (holds completed game on screen for 15s)
+        self._last_snapshot = None
         self._last_game_id = None
         self._last_game_order = None
         self._last_round_number = None
@@ -408,6 +409,9 @@ class TSHTeamBattleWidget(QDockWidget):
         self._transition_timer = QTimer(self)
         self._transition_timer.setInterval(1000)
         self._transition_timer.timeout.connect(self._OnTransitionTimerTick)
+
+        if TSHGameAssetManager.instance:
+            TSHGameAssetManager.instance.signals.onLoad.connect(self._OnGameAssetsLoaded)
 
         self.signals.team1_stock_up.connect(self.T1_Stock_Up)
         self.signals.team1_stock_down.connect(self.T1_Stock_Down)
@@ -915,7 +919,13 @@ class TSHTeamBattleWidget(QDockWidget):
             self._DoApplyNexusData(snapshot)
             self.SetNexusStatus("connected", "Connected")
 
+    def _OnGameAssetsLoaded(self):
+        if getattr(self, "_last_snapshot", None):
+            logger.info("[TSHTeamBattleWidget] Game assets loaded; re-applying live match data")
+            self._DoApplyNexusData(self._last_snapshot)
+
     def _DoApplyNexusData(self, snapshot: dict):
+        self._last_snapshot = snapshot
         try:
             StateManager.BlockSaving()
             self._syncing_stocks += 1
@@ -1057,8 +1067,13 @@ class TSHTeamBattleWidget(QDockWidget):
             active_home_id = live_state.get("home_active_player_id")
             active_away_id = live_state.get("away_active_player_id")
 
-            # Dual-layer protection: During starter selection (round 1), do not show either starter until both are locked in
-            if live_state.get("round_number") == 1 and (not active_home_id or not active_away_id):
+            # Dual-layer protection: During starter selection (round 1 blind pick / player select),
+            # do not show either starter until both are locked in.
+            # Once round 1 moves to stage striking or match play (or round > 1), starters have been confirmed
+            # and must never be hidden or stripped.
+            is_round_one = (live_state.get("round_number") or 1) == 1
+            is_starter_selection_phase = live_state.get("phase") in ("blind_pick", "player_select")
+            if is_round_one and is_starter_selection_phase and (not active_home_id or not active_away_id):
                 active_home_id = None
                 active_away_id = None
                 roster_selections = [s for s in roster_selections if s.get("slot_order") != 1]
@@ -1072,7 +1087,7 @@ class TSHTeamBattleWidget(QDockWidget):
             def sort_key(p):
                 pid = p.get("id")
                 sel = selections_by_player.get(pid) or selections_by_player.get(str(pid), {})
-                slot = sel.get("slot_order", 999)
+                slot = int(sel.get("slot_order") or 999) if sel else 999
                 return (slot, str(p.get("tag", "")).lower(), str(pid or ""))
 
             home_players.sort(key=sort_key)
@@ -1097,13 +1112,14 @@ class TSHTeamBattleWidget(QDockWidget):
                 #    (with 0 stocks & eliminated status) until the next player is sent in.
                 effective_active_id = active_id
                 if not effective_active_id:
-                    team_selections = [
-                        (p, selections_by_player[p["id"]])
-                        for p in team_players
-                        if p.get("id") in selections_by_player
-                    ]
+                    team_selections = []
+                    for p in team_players:
+                        pid = p.get("id")
+                        sel = selections_by_player.get(pid) or selections_by_player.get(str(pid))
+                        if sel:
+                            team_selections.append((p, sel))
                     if team_selections:
-                        team_selections.sort(key=lambda item: item[1].get("slot_order", 0))
+                        team_selections.sort(key=lambda item: int(item[1].get("slot_order") or 0))
                         effective_active_id = team_selections[-1][0].get("id")
 
                 if effective_active_id is not None:
@@ -1120,13 +1136,22 @@ class TSHTeamBattleWidget(QDockWidget):
                         sel_entry = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id) or {}
                         bp_entry = blind_by_player.get(player.get("id")) or blind_by_player.get(p_id) or {}
                         is_round_one = (live_state.get("round_number") or 1) == 1
-                        is_starter_hidden = (is_round_one and (not active_home_id or not active_away_id))
+                        is_starter_selection_phase = live_state.get("phase") in ("blind_pick", "player_select")
+                        is_starter_hidden = (is_round_one and is_starter_selection_phase and (not active_home_id or not active_away_id))
 
-                        # Double blind is only for round 1 starter reveal; round 2+ selections come strictly
-                        # from roster_selections, and bench/standby players never show blind picks.
+                        # Determine character:
+                        # 1. Roster selections (confirmed sent-in player pick) takes highest priority
                         char_name = sel_entry.get("selected_character") or sel_entry.get("character")
-                        if not char_name and is_round_one and is_active and not is_starter_hidden:
-                            char_name = bp_entry.get("selected_character") or bp_entry.get("character")
+                        if char_name in ("", "Character not selected", "None", None):
+                            char_name = None
+
+                        # 2. If roster selection has no character, fallback to blind pick ONLY for round 1 starter
+                        # (slot 1 or active starter) once starters are revealed. Standby/bench players never show blind picks.
+                        if not char_name and not is_starter_hidden:
+                            if sel_entry.get("slot_order") == 1 or (is_round_one and is_active):
+                                bp_char = bp_entry.get("selected_character") or bp_entry.get("character")
+                                if bp_char and bp_char not in ("", "Character not selected", "None"):
+                                    char_name = bp_char
 
                         base_char, moveset = normalize_character_name(char_name)
 
