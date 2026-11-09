@@ -1171,18 +1171,26 @@ class TSHTeamBattleWidget(QDockWidget):
                             char_elem = pw.character_elements[0][1]
                             color_elem = pw.character_elements[0][2]
                             cdata = char_elem.currentData()
-                            if cdata and cdata.get("en_name"):
+                            if cdata and isinstance(cdata, dict) and cdata.get("en_name"):
                                 cur_char_name = cdata.get("en_name")
-                                cur_color_idx = color_elem.currentIndex()
+                            elif char_elem.currentText():
+                                cur_char_name = char_elem.currentText()
+                            cur_color_idx = color_elem.currentIndex()
 
-                        if is_active and cur_char_name:
+                        # If live sync set a character/skin for this player, prioritize it
+                        live_char = getattr(pw, "_live_char", None)
+                        live_skin = getattr(pw, "_live_skin", None)
+                        if live_char:
+                            cur_char_name = live_char
+                        if live_skin is not None:
+                            cur_color_idx = live_skin
+
+                        if (is_active or live_char) and cur_char_name:
                             # Active in-ring fighter: preserve live character & costume skin from live match sync
                             player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
                         elif base_char:
-                            if cur_char_name and cur_char_name.lower() == base_char.lower():
-                                player_data["mains"] = {"ssbu": [[base_char, cur_color_idx]]}
-                            else:
-                                player_data["mains"] = [base_char]
+                            # Use base_char from snapshot, but preserve current skin selection
+                            player_data["mains"] = {"ssbu": [[base_char, cur_color_idx]]}
                         elif cur_char_name:
                             # Preserve manually selected character in TSH if snapshot does not specify one
                             player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}

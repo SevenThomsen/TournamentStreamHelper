@@ -688,9 +688,19 @@ class WebServerActions(QThread):
 
         target_pw = None
         for pw in widgets:
-            if pw.IsActive() and not pw.IsEliminated():
+            if pw.IsActive() and not pw.IsEliminated() and pw.dynamicSpinner.value() > 0:
                 target_pw = pw
                 break
+        if not target_pw:
+            for pw in widgets:
+                if not pw.IsEliminated() and pw.dynamicSpinner.value() > 0:
+                    target_pw = pw
+                    break
+        if not target_pw:
+            for pw in widgets:
+                if pw.IsActive() and not pw.IsEliminated():
+                    target_pw = pw
+                    break
         if not target_pw:
             for pw in widgets:
                 if not pw.IsEliminated():
@@ -706,6 +716,11 @@ class WebServerActions(QThread):
 
         if target_pw and mains:
             mains = self._resolve_mains(mains)
+            game_mains = mains.get("ssbu") if isinstance(mains, dict) else mains
+            if game_mains and len(game_mains) > 0 and len(game_mains[0]) > 0:
+                target_pw._live_char = game_mains[0][0]
+                target_pw._live_skin = int(game_mains[0][1]) if len(game_mains[0]) > 1 else 0
+
             target_pw.SetData({"mains": mains}, dontLoadFromDB=True, clear=False)
             logger.info(f"[TSH] Updated Team {team_num} player mains ({target_pw.path}): {mains}")
             return {"status": "ok", "team": team_num, "player": target_pw.path}

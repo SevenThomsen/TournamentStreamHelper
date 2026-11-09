@@ -777,10 +777,15 @@ class TSHTeamPlayerWidget(QGroupBox):
         characterData = element.currentData()
 
         if characterData:
-            target.setModel(TSHGameAssetManager.instance.skinModels.get(
-                characterData.get("en_name")))
+            skin_model = TSHGameAssetManager.instance.skinModels.get(
+                characterData.get("en_name"))
+            if target.model() != skin_model:
+                with QSignalBlocker(target):
+                    target.setModel(skin_model)
         else:
-            target.setModel(QStandardItemModel())
+            if not isinstance(target.model(), QStandardItemModel) or target.model().rowCount() > 0:
+                with QSignalBlocker(target):
+                    target.setModel(QStandardItemModel())
 
     def UpdateVariantOptions(self, char_element: QComboBox, variant_element: QComboBox):
         if not variant_element:
@@ -1034,13 +1039,19 @@ class TSHTeamPlayerWidget(QGroupBox):
                             target_main = main[0] if len(main) > 0 else ""
                             base_target, _ = normalize_character_name(target_main)
                             characterIndex = _match_char_index(character_element, target_main, base_target)
-                            character_element.setCurrentIndex(characterIndex)
-                            self.LoadSkinOptions(character_element, color_element)
-                            self.UpdateVariantOptions(character_element, variant_element)
+                            if character_element.currentIndex() != characterIndex:
+                                with QSignalBlocker(character_element):
+                                    character_element.setCurrentIndex(characterIndex)
+                                self.LoadSkinOptions(character_element, color_element)
+                                self.UpdateVariantOptions(character_element, variant_element)
+                            elif not color_element.model() or color_element.count() == 0:
+                                self.LoadSkinOptions(character_element, color_element)
                             if len(main) > 1:
                                 color_idx = int(main[1])
                                 if 0 <= color_idx < color_element.count():
-                                    color_element.setCurrentIndex(color_idx)
+                                    if color_element.currentIndex() != color_idx:
+                                        with QSignalBlocker(color_element):
+                                            color_element.setCurrentIndex(color_idx)
 
                             variantIndex = 0
                             if variant_element:
