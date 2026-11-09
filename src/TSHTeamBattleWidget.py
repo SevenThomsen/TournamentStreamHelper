@@ -1097,11 +1097,6 @@ class TSHTeamBattleWidget(QDockWidget):
             home_players.sort(key=sort_key)
             away_players.sort(key=sort_key)
 
-            # Ensure all player widgets are using the latest character models
-            if TSHGameAssetManager.instance and TSHGameAssetManager.instance.characterModel:
-                for pw in self.team1playerWidgets + self.team2playerWidgets:
-                    pw.ReloadCharacters()
-
             # 5. Populate Team 1 & Team 2 Player Widgets
             home_round_start = live_state.get("home_round_start_stocks")
             away_round_start = live_state.get("away_round_start_stocks")
@@ -1180,13 +1175,15 @@ class TSHTeamBattleWidget(QDockWidget):
                                 cur_char_name = cdata.get("en_name")
                                 cur_color_idx = color_elem.currentIndex()
 
-                        if base_char:
-                            # If the widget already has this same character selected, preserve custom costume color index
-                            if cur_char_name and cur_char_name.lower() == base_char.lower() and cur_color_idx > 0:
+                        if is_active and cur_char_name:
+                            # Active in-ring fighter: preserve live character & costume skin from live match sync
+                            player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
+                        elif base_char:
+                            if cur_char_name and cur_char_name.lower() == base_char.lower():
                                 player_data["mains"] = {"ssbu": [[base_char, cur_color_idx]]}
                             else:
                                 player_data["mains"] = [base_char]
-                        elif is_active and cur_char_name:
+                        elif cur_char_name:
                             # Preserve manually selected character in TSH if snapshot does not specify one
                             player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
                         else:

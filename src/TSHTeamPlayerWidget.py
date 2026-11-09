@@ -836,10 +836,12 @@ class TSHTeamPlayerWidget(QGroupBox):
                             new_idx = i
                             break
                 if new_idx > 0:
-                    c[1].setCurrentIndex(new_idx)
+                    with QSignalBlocker(c[1]):
+                        c[1].setCurrentIndex(new_idx)
                     self.LoadSkinOptions(c[1], c[2])
                     if c[2] and 0 <= cur_skin < c[2].count():
-                        c[2].setCurrentIndex(cur_skin)
+                        with QSignalBlocker(c[2]):
+                            c[2].setCurrentIndex(cur_skin)
                     self.UpdateVariantOptions(c[1], c[3])
                     self.CharactersChanged()
 
