@@ -18,6 +18,7 @@ from .TSHGameAssetManager import TSHGameAssetManager
 from .Helpers.TSHLocaleHelper import TSHLocaleHelper
 from .Helpers.TSHVersionHelper import add_beta_label
 from .Helpers.TSHCharacterHelper import normalize_character_name
+from .TSHPlayerDB import TSHPlayerDB
 
 class TSHTeamBattleSignals(QObject):
     # GENERAL SIGNALS
@@ -1164,18 +1165,27 @@ class TSHTeamBattleWidget(QDockWidget):
                             "prefix": sponsor,
                         }
 
-                        # Check existing widget character and skin
+                        # Check existing widget character, skin, and moveset
                         cur_char_name = None
                         cur_color_idx = 0
+                        cur_moveset = getattr(pw, "moveset", None)
                         if pw.character_elements:
                             char_elem = pw.character_elements[0][1]
                             color_elem = pw.character_elements[0][2]
+                            var_elem = pw.character_elements[0][3]
                             cdata = char_elem.currentData()
                             if cdata and isinstance(cdata, dict) and cdata.get("en_name"):
                                 cur_char_name = cdata.get("en_name")
                             elif char_elem.currentText():
                                 cur_char_name = char_elem.currentText()
                             cur_color_idx = color_elem.currentIndex()
+                            if not cur_moveset and var_elem is not None and var_elem.currentText().strip():
+                                cur_moveset = var_elem.currentText().strip()
+
+                        if cur_char_name and cur_char_name.strip():
+                            cur_char_name = cur_char_name.strip()
+                        else:
+                            cur_char_name = None
 
                         # If live sync set a character/skin for this player, prioritize it
                         live_char = getattr(pw, "_live_char", None)
@@ -1185,23 +1195,48 @@ class TSHTeamBattleWidget(QDockWidget):
                         if live_skin is not None:
                             cur_color_idx = live_skin
 
+                        # Look up player in local player database (local_players.json)
+                        db_player = TSHPlayerDB.GetPlayerFromTag(tag, sponsor)
+                        db_main_char = None
+                        db_skin_idx = 0
+                        db_moveset = None
+                        if db_player:
+                            for field in ("name", "country_code", "state_code", "twitter", "pronoun"):
+                                if db_player.get(field):
+                                    player_data[field] = db_player.get(field)
+                            mains_dict = db_player.get("mains", {})
+                            if isinstance(mains_dict, dict):
+                                curr_game = TSHGameAssetManager.instance.selectedGame.get("codename", "ssbu") if (TSHGameAssetManager.instance and TSHGameAssetManager.instance.selectedGame) else "ssbu"
+                                g_mains = mains_dict.get(curr_game) or mains_dict.get("ssbu") or mains_dict.get("ultimate") or []
+                                if g_mains and len(g_mains) > 0 and len(g_mains[0]) > 0:
+                                    first_m = g_mains[0]
+                                    raw_c = first_m[0] if isinstance(first_m, (list, tuple)) else str(first_m)
+                                    db_main_char, extracted_ms = normalize_character_name(raw_c)
+                                    if len(first_m) > 1 and isinstance(first_m[1], int):
+                                        db_skin_idx = first_m[1]
+                                    if len(first_m) > 2 and first_m[2]:
+                                        db_moveset = str(first_m[2]).strip()
+                                    elif extracted_ms:
+                                        db_moveset = extracted_ms
+
+                        # Priority:
+                        # 1. Roster selections (active / confirmed sent-in pick from live match snapshot)
+                        # 2. Existing live_char from live sync
+                        # 3. Existing widget selection (if manually selected)
+                        # 4. Local players database main (from local_players.json)
                         if (is_active or live_char) and cur_char_name:
-                            # Active in-ring fighter: preserve live character & costume skin from live match sync
                             player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
                         elif base_char:
-                            # Use base_char from snapshot, but preserve current skin selection
                             player_data["mains"] = {"ssbu": [[base_char, cur_color_idx]]}
                         elif cur_char_name:
-                            # Preserve manually selected character in TSH if snapshot does not specify one
                             player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
+                        elif db_main_char:
+                            player_data["mains"] = {"ssbu": [[db_main_char, db_skin_idx]]}
                         else:
-                            # No character selected for this player
                             player_data["mains"] = [""]
 
-                        if moveset:
-                            player_data["moveset"] = moveset
-                        else:
-                            player_data["moveset"] = ""
+                        final_moveset = moveset or cur_moveset or db_moveset or ""
+                        player_data["moveset"] = final_moveset
 
                         pw.SetData(player_data, dontLoadFromDB=True, clear=False)
                         pw.SetActiveStatus(is_active)

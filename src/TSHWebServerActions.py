@@ -723,6 +723,6 @@ class WebServerActions(QThread):
 
             target_pw.SetData({"mains": mains}, dontLoadFromDB=True, clear=False)
             logger.info(f"[TSH] Updated Team {team_num} player mains ({target_pw.path}): {mains}")
-            return {"status": "ok", "team": team_num, "player": target_pw.path}
+            return {"status": "ok", "team": team_num, "player": target_pw.path, "stocks": target_pw.dynamicSpinner.value()}
 
         return {"status": "noop", "team": team_num}

@@ -317,24 +317,25 @@ class TSHTeamPlayerWidget(QGroupBox):
 
                 data["skin"] = color.currentIndex()
 
-                en_name = data.get("en_name", "")
-                is_mii = en_name in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter")
-                variant_text = variant.currentText().strip() if (variant and variant.isEditable()) else ""
+                en_name = data.get("en_name", "") or data.get("name", "") or character.currentText() or ""
+                clean_en = en_name.lower()
+                is_mii = clean_en in ("mii brawler", "mii gunner", "mii swordfighter", "miifighter", "miigunner", "miiswordsman") or \
+                         any(m in clean_en for m in ("mii brawler", "mii gunner", "mii swordfighter"))
+                variant_text = variant.currentText().strip() if (variant is not None) else ""
 
-                if variant and variant.currentData():
-                    data["variant"] = variant.currentData()
-                elif is_mii and (getattr(self, "moveset", None) or variant_text):
-                    ms = getattr(self, "moveset", None) or parse_mii_moveset(variant_text) or (variant_text if re.match(r"^[1-3]{4}$", variant_text) else None)
+                if is_mii:
+                    ms = getattr(self, "moveset", None) or parse_mii_moveset(variant_text) or (variant_text if variant_text else None)
                     if ms:
+                        self.moveset = ms
                         data["variant"] = {"en_name": f"({ms})", "display_name": f"({ms})"}
                         data["moveset"] = ms
                     else:
                         data["variant"] = {}
+                        data["moveset"] = ""
+                elif variant is not None and variant.currentData():
+                    data["variant"] = variant.currentData()
                 else:
                     data["variant"] = {}
-
-                if is_mii and getattr(self, "moveset", None):
-                    data["moveset"] = self.moveset
 
                 characters[i+1] = data
 
@@ -342,7 +343,8 @@ class TSHTeamPlayerWidget(QGroupBox):
                 f"{self.path}.character", characters)
 
             first_char = characters.get(1, {})
-            first_is_mii = first_char.get("en_name") in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter")
+            first_en = first_char.get("en_name", "") or first_char.get("name", "")
+            first_is_mii = any(m in str(first_en).lower() for m in ("mii brawler", "mii gunner", "mii swordfighter", "miifighter", "miigunner", "miiswordsman"))
             if first_is_mii and getattr(self, "moveset", None):
                 StateManager.Set(f"{self.path}.moveset", self.moveset)
             else:
@@ -628,14 +630,24 @@ class TSHTeamPlayerWidget(QGroupBox):
 
             def on_variant_text_changed(text, element=player_character):
                 charData = element.currentData()
-                en_name = charData.get("en_name", "") if charData else ""
-                if en_name in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter"):
-                    ms = parse_mii_moveset(text) or (text.strip() if re.match(r"^[1-3]{4}$", text.strip()) else None)
+                en_name = charData.get("en_name", "") if isinstance(charData, dict) else ""
+                if not en_name and element.currentText():
+                    en_name = element.currentText()
+                clean_en = en_name.lower()
+                is_mii = clean_en in ("mii brawler", "mii gunner", "mii swordfighter", "miifighter", "miigunner", "miiswordsman") or \
+                         any(m in clean_en for m in ("mii brawler", "mii gunner", "mii swordfighter"))
+                if is_mii:
+                    clean_text = text.strip()
+                    ms = parse_mii_moveset(clean_text) or clean_text or None
                     if ms != getattr(self, "moveset", None):
                         self.moveset = ms
                         self.CharactersChanged()
 
             player_variant.currentTextChanged.connect(on_variant_text_changed)
+            if player_variant.lineEdit():
+                player_variant.lineEdit().editingFinished.connect(
+                    lambda v=player_variant, e=player_character: on_variant_text_changed(v.currentText(), e)
+                )
 
             player_character.setCurrentIndex(0)
             player_character_color.setCurrentIndex(0)
@@ -788,23 +800,33 @@ class TSHTeamPlayerWidget(QGroupBox):
                     target.setModel(QStandardItemModel())
 
     def UpdateVariantOptions(self, char_element: QComboBox, variant_element: QComboBox):
-        if not variant_element:
+        if variant_element is None:
             return
         charData = char_element.currentData()
-        en_name = charData.get("en_name", "") if charData else ""
-        is_mii = en_name in ("Mii Brawler", "Mii Gunner", "Mii Swordfighter")
+        en_name = charData.get("en_name", "") if isinstance(charData, dict) else ""
+        if not en_name and char_element.currentText():
+            en_name = char_element.currentText()
+        clean_en = en_name.lower()
+        is_mii = clean_en in ("mii brawler", "mii gunner", "mii swordfighter", "miifighter", "miigunner", "miiswordsman") or \
+                 any(m in clean_en for m in ("mii brawler", "mii gunner", "mii swordfighter"))
         has_variants = len(TSHGameAssetManager.instance.variants) > 0
 
         if is_mii:
             variant_element.setVisible(True)
+            variant_element.setEnabled(True)
+            variant_element.setEditable(True)
             variant_element.setToolTip("Mii Moveset (e.g. 1332)")
             if variant_element.lineEdit():
+                variant_element.lineEdit().setReadOnly(False)
                 variant_element.lineEdit().setPlaceholderText("Moveset (1332)")
-            if getattr(self, "moveset", None):
-                if variant_element.currentText() != self.moveset:
-                    variant_element.setEditText(self.moveset)
+            ms = getattr(self, "moveset", None)
+            if ms:
+                if variant_element.currentText() != ms:
+                    with QSignalBlocker(variant_element):
+                        variant_element.setEditText(ms)
         elif has_variants:
             variant_element.setVisible(True)
+            variant_element.setEnabled(True)
             variant_element.setToolTip("")
             if variant_element.lineEdit():
                 variant_element.lineEdit().setPlaceholderText("")
@@ -881,6 +903,7 @@ class TSHTeamPlayerWidget(QGroupBox):
                 tag = data.get(
                     "prefix")+" "+data.get("gamerTag") if data.get("prefix") else data.get("gamerTag")
 
+                found_db = False
                 for i in range(TSHPlayerDB.model.rowCount()):
                     item = TSHPlayerDB.model.item(
                         i).data(Qt.ItemDataRole.UserRole)
@@ -889,9 +912,15 @@ class TSHTeamPlayerWidget(QGroupBox):
                         "prefix")+" "+item.get("gamerTag") if item.get("prefix") else item.get("gamerTag")
 
                     if tag == dbTag:
+                        found_db = True
                         self.SetData(item, dontLoadFromDB=True,
                                      clear=False, no_mains=no_mains)
                         break
+
+                if not found_db:
+                    db_p = TSHPlayerDB.GetPlayerFromTag(data.get("gamerTag"), data.get("prefix"))
+                    if db_p:
+                        self.SetData(db_p, dontLoadFromDB=True, clear=False, no_mains=no_mains)
 
             name = self.findChild(QWidget, "name")
             if data.get("gamerTag") and data.get("gamerTag") != name.text():
@@ -1044,8 +1073,11 @@ class TSHTeamPlayerWidget(QGroupBox):
                                     character_element.setCurrentIndex(characterIndex)
                                 self.LoadSkinOptions(character_element, color_element)
                                 self.UpdateVariantOptions(character_element, variant_element)
-                            elif not color_element.model() or color_element.count() == 0:
-                                self.LoadSkinOptions(character_element, color_element)
+                            else:
+                                if not color_element.model() or color_element.count() == 0:
+                                    self.LoadSkinOptions(character_element, color_element)
+                                self.UpdateVariantOptions(character_element, variant_element)
+
                             if len(main) > 1:
                                 color_idx = int(main[1])
                                 if 0 <= color_idx < color_element.count():
@@ -1053,20 +1085,34 @@ class TSHTeamPlayerWidget(QGroupBox):
                                         with QSignalBlocker(color_element):
                                             color_element.setCurrentIndex(color_idx)
 
-                            variantIndex = 0
-                            if variant_element:
-                                for j in range(variant_element.model().rowCount()):
-                                    item = variant_element.model().item(j).data(Qt.ItemDataRole.UserRole)
-                                    if item:
-                                        if len(main) >= 3:
-                                            if item.get("en_name") == main[2]:
-                                                variantIndex = j
+                            c_data = character_element.currentData()
+                            c_en = c_data.get("en_name", "") if isinstance(c_data, dict) else ""
+                            if not c_en and character_element.currentText():
+                                c_en = character_element.currentText()
+                            clean_c_en = c_en.lower()
+                            is_c_mii = clean_c_en in ("mii brawler", "mii gunner", "mii swordfighter", "miifighter", "miigunner", "miiswordsman") or \
+                                       any(m in clean_c_en for m in ("mii brawler", "mii gunner", "mii swordfighter"))
+
+                            if is_c_mii:
+                                ms = getattr(self, "moveset", "") or ""
+                                if variant_element is not None and variant_element.currentText() != ms:
+                                    with QSignalBlocker(variant_element):
+                                        variant_element.setEditText(ms)
+                            else:
+                                variantIndex = 0
+                                if variant_element is not None:
+                                    for j in range(variant_element.model().rowCount()):
+                                        item = variant_element.model().item(j).data(Qt.ItemDataRole.UserRole)
+                                        if item:
+                                            if len(main) >= 3:
+                                                if item.get("en_name") == main[2]:
+                                                    variantIndex = j
+                                                    break
+                                            else:
+                                                variantIndex = 0
                                                 break
-                                        else:
-                                            variantIndex = 0
-                                            break
-                            if variant_element and variant_element.currentIndex() != variantIndex:
-                                variant_element.setCurrentIndex(variantIndex)
+                                if variant_element is not None and variant_element.currentIndex() != variantIndex:
+                                    variant_element.setCurrentIndex(variantIndex)
                             self.CharactersChanged()
 
             if data.get("city"):

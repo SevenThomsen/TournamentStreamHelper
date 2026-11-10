@@ -387,6 +387,129 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertGreater(len(mock_skin_loaded), 0)
         self.assertGreater(len(mock_char_changed), 0)
 
+    def test_player_db_get_player_from_tag(self):
+        from src.TSHPlayerDB import TSHPlayerDB
+
+        # Mock DB data
+        mock_db = {
+            "NCAT Cate": {
+                "prefix": "NCAT",
+                "gamerTag": "Cate",
+                "name": "Ali'i Turner",
+                "mains": {"ssbu": [["Little Mac", 0, ""]]}
+            },
+            "SU Scooby": {
+                "prefix": "SU",
+                "gamerTag": "Scooby",
+                "name": "Zachary Garby",
+                "mains": {"ssbu": [["Mii Brawler", 0, "1332"]]}
+            }
+        }
+        orig_db = TSHPlayerDB.database
+        try:
+            TSHPlayerDB.database = mock_db
+
+            # Exact prefix + tag
+            p1 = TSHPlayerDB.GetPlayerFromTag("Cate", "NCAT")
+            self.assertIsNotNone(p1)
+            self.assertEqual(p1["gamerTag"], "Cate")
+
+            # Tag alone
+            p2 = TSHPlayerDB.GetPlayerFromTag("Cate")
+            self.assertIsNotNone(p2)
+            self.assertEqual(p2["gamerTag"], "Cate")
+
+            # Pipe separated
+            p3 = TSHPlayerDB.GetPlayerFromTag("NCAT | Cate")
+            self.assertIsNotNone(p3)
+            self.assertEqual(p3["gamerTag"], "Cate")
+
+            # Mii with moveset
+            p4 = TSHPlayerDB.GetPlayerFromTag("Scooby", "SU")
+            self.assertIsNotNone(p4)
+            self.assertEqual(p4["mains"]["ssbu"][0][0], "Mii Brawler")
+            self.assertEqual(p4["mains"]["ssbu"][0][2], "1332")
+
+            # Non-existent
+            self.assertIsNone(TSHPlayerDB.GetPlayerFromTag("UnknownPlayer123"))
+        finally:
+            TSHPlayerDB.database = orig_db
+
+    def test_standby_players_fallback_to_local_players_db(self):
+        """When Nexus snapshot has no character selected for a standby player,
+        character and moveset fall back to local_players.json via TSHPlayerDB."""
+        from src.TSHPlayerDB import TSHPlayerDB
+
+        mock_db = {
+            "NCAT Cate": {
+                "prefix": "NCAT",
+                "gamerTag": "Cate",
+                "mains": {"ssbu": [["Little Mac", 2, ""]]}
+            },
+            "SU Scooby": {
+                "prefix": "SU",
+                "gamerTag": "Scooby",
+                "mains": {"ssbu": [["Mii Brawler", 0, "1332"]]}
+            }
+        }
+        orig_db = TSHPlayerDB.database
+        try:
+            TSHPlayerDB.database = mock_db
+
+            # Standby player 1 (Cate) - no character on Nexus
+            db_p1 = TSHPlayerDB.GetPlayerFromTag("Cate", "NCAT")
+            self.assertIsNotNone(db_p1)
+            raw_c1 = db_p1["mains"]["ssbu"][0][0]
+            skin1 = db_p1["mains"]["ssbu"][0][1]
+            base_c1, ms1 = normalize_character_name(raw_c1)
+            self.assertEqual(base_c1, "Little Mac")
+            self.assertEqual(skin1, 2)
+
+            # Standby player 2 (Scooby) - Mii Brawler with moveset 1332
+            db_p2 = TSHPlayerDB.GetPlayerFromTag("Scooby", "SU")
+            self.assertIsNotNone(db_p2)
+            raw_c2 = db_p2["mains"]["ssbu"][0][0]
+            moveset2 = db_p2["mains"]["ssbu"][0][2]
+            base_c2, _ = normalize_character_name(raw_c2)
+            self.assertEqual(base_c2, "Mii Brawler")
+            self.assertEqual(moveset2, "1332")
+        finally:
+            TSHPlayerDB.database = orig_db
+
+    def test_mii_moveset_editable_and_preserved(self):
+        from src.TSHTeamPlayerWidget import TSHTeamPlayerWidget
+        from src.TSHGameAssetManager import TSHGameAssetManager
+        from src.StateManager import StateManager
+        from qtpy.QtGui import QStandardItem
+        from qtpy.QtCore import Qt
+
+        # Add Mii Brawler to characterModel for test
+        item = QStandardItem("Mii Brawler")
+        item.setData({"en_name": "Mii Brawler", "name": "Mii Brawler", "codename": "miifighter"}, Qt.ItemDataRole.UserRole)
+        TSHGameAssetManager.instance.characterModel.appendRow(item)
+
+        pw = TSHTeamPlayerWidget(1, 1, "score.team.1.player.1")
+        self.assertGreater(len(pw.character_elements), 0)
+
+        # Set character to Mii Brawler with moveset 1332
+        pw.SetData({"mains": ["Mii Brawler"], "moveset": "1332"}, dontLoadFromDB=True, clear=False)
+
+        var_elem = pw.character_elements[0][3]
+        self.assertFalse(var_elem.isHidden())
+        self.assertTrue(var_elem.isEditable())
+        self.assertEqual(var_elem.currentText(), "1332")
+        self.assertEqual(getattr(pw, "moveset", None), "1332")
+
+        # Edit moveset text manually to 2332
+        var_elem.setEditText("2332")
+        self.assertEqual(getattr(pw, "moveset", None), "2332")
+        self.assertEqual(StateManager.Get("score.team.1.player.1.moveset"), "2332")
+
+        # Re-apply snapshot data without moveset; moveset must NOT be wiped
+        pw.SetData({"mains": {"ssbu": [["Mii Brawler", 0]]}}, dontLoadFromDB=True, clear=False)
+        self.assertEqual(var_elem.currentText(), "2332")
+        self.assertEqual(getattr(pw, "moveset", None), "2332")
+
 
 if __name__ == "__main__":
     unittest.main()

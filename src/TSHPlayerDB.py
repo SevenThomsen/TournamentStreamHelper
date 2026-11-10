@@ -147,10 +147,56 @@ class TSHPlayerDB:
         TSHPlayerDB.SetupModel()
 
     @staticmethod
-    def GetPlayerFromTag(tag):
-        for player_db in TSHPlayerDB.database.values():
-            if tag.lower() == player_db.get("gamerTag").lower():
-                return player_db
+    def GetPlayerFromTag(tag, prefix=None):
+        if not tag:
+            return None
+        if not TSHPlayerDB.database:
+            TSHPlayerDB.LoadDB()
+        tag_str = str(tag).strip()
+        prefix_str = str(prefix).strip() if prefix else ""
+        combined = f"{prefix_str} {tag_str}".strip().lower()
+        tag_lower = tag_str.lower()
+
+        # 1. Exact match by prefix + gamerTag
+        if prefix_str:
+            for p in TSHPlayerDB.database.values():
+                if not p:
+                    continue
+                db_prefix = (p.get("prefix") or "").strip().lower()
+                db_tag = (p.get("gamerTag") or "").strip().lower()
+                if f"{db_prefix} {db_tag}".strip() == combined:
+                    return p
+
+        # 2. Match by gamerTag alone (case-insensitive)
+        for p in TSHPlayerDB.database.values():
+            if not p:
+                continue
+            db_tag = (p.get("gamerTag") or "").strip().lower()
+            if db_tag == tag_lower:
+                return p
+
+        # 3. Match if tag has a separator (e.g. "NCAT | Cate", "NCAT / Cate", "NCAT - Cate")
+        for sep in ("|", "/", "-"):
+            if sep in tag_str:
+                parts = [part.strip() for part in tag_str.split(sep) if part.strip()]
+                if len(parts) >= 2:
+                    sub_tag = parts[-1].lower()
+                    for p in TSHPlayerDB.database.values():
+                        if not p:
+                            continue
+                        db_tag = (p.get("gamerTag") or "").strip().lower()
+                        if db_tag == sub_tag:
+                            return p
+
+        # 4. Fuzzy / whitespace-stripped match
+        tag_stripped = "".join(tag_lower.split())
+        for p in TSHPlayerDB.database.values():
+            if not p:
+                continue
+            db_tag = "".join((p.get("gamerTag") or "").lower().split())
+            if db_tag and db_tag == tag_stripped:
+                return p
+
         return None
 
     @staticmethod
