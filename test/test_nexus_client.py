@@ -771,8 +771,6 @@ class TestNexusRoomClient(unittest.TestCase):
             # Simulate Game 1 progress before Team 1 wins:
             # several players eliminated/low stocks, active flags set, Match edited to "Match 1"
             w.matchCombo.setCurrentText("Match 1")
-            w.team1stocks.setValue(4)
-            w.team2stocks.setValue(0)
             w.team1playerWidgets[0].dynamicSpinner.setValue(0)
             w.team1playerWidgets[0].SetEliminatedStatus(True)
             w.team1playerWidgets[1].dynamicSpinner.setValue(1)
@@ -780,6 +778,8 @@ class TestNexusRoomClient(unittest.TestCase):
             for pw in w.team2playerWidgets:
                 pw.dynamicSpinner.setValue(0)
                 pw.SetEliminatedStatus(True)
+            w.team1stocks.setValue(4)
+            w.team2stocks.setValue(0)
 
             # Periodic update: Team 1 wins Game 1 -> home_score becomes 1 (even if snapshot still carries Game 1 active ids)
             win1_snap = {
@@ -798,6 +798,28 @@ class TestNexusRoomClient(unittest.TestCase):
             }
             w.ApplyNexusData(win1_snap)
 
+            # Series score updates immediately, while stocks/active/match are held for 30s
+            self.assertEqual(w.team1score.value(), 1)
+            self.assertEqual(w.team2score.value(), 0)
+            self.assertTrue(w._transition_timer.isActive())
+            self.assertEqual(w._transition_seconds_left, 30)
+            self.assertIn("Game 1 complete", w.lblNexusStatus.text())
+            self.assertEqual(w.team1stocks.value(), 4)
+            self.assertEqual(w.team2stocks.value(), 0)
+            self.assertEqual(w.matchCombo.currentText(), "Match 1")
+            self.assertTrue(w.team1playerWidgets[1].IsActive())
+
+            # Ticks 1..29 keep holding the completed Game 1 scoreboard
+            for expected_left in range(29, 0, -1):
+                w._OnTransitionTimerTick()
+                self.assertTrue(w._transition_timer.isActive())
+                self.assertEqual(w._transition_seconds_left, expected_left)
+                self.assertEqual(w.team1stocks.value(), 4)
+                self.assertEqual(w.matchCombo.currentText(), "Match 1")
+
+            # Tick 30 finishes countdown -> resets stocks to 12, deactivates all players, increments Match
+            w._OnTransitionTimerTick()
+            self.assertFalse(w._transition_timer.isActive())
             self.assertEqual(w.team1score.value(), 1)
             self.assertEqual(w.team2score.value(), 0)
             self.assertEqual(w.team1stocks.value(), 12)
@@ -828,7 +850,7 @@ class TestNexusRoomClient(unittest.TestCase):
             self.assertTrue(w.team2playerWidgets[1].IsActive())
             self.assertFalse(w.team1playerWidgets[0].IsActive())
 
-            # Team 2 wins Game 2 -> away_score increases 0 -> 1, Match increments to Match 3 & resets again
+            # Team 2 wins Game 2 -> away_score increases 0 -> 1, holds 30s, then resets
             w.team1stocks.setValue(0)
             w.team2stocks.setValue(3)
             w.team1playerWidgets[1].dynamicSpinner.setValue(0)
@@ -846,18 +868,48 @@ class TestNexusRoomClient(unittest.TestCase):
                 "blind_picks": [],
             }
             w.ApplyNexusData(win2_snap)
+            self.assertTrue(w._transition_timer.isActive())
+            self.assertEqual(w.team1score.value(), 1)
+            self.assertEqual(w.team2score.value(), 1)
+            self.assertEqual(w.team1stocks.value(), 0)
+            self.assertEqual(w.matchCombo.currentText(), "Match 2")
 
+            # While still holding, Game 3 starter h3 is queued -> should wait until 30s finishes, then activate on fresh board
+            game3_queued_snap = {
+                "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 1, "away_score": 1},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": home_players + away_players,
+                "live_state": {"round_number": 1, "phase": "playing", "home_active_player_id": "h3", "away_active_player_id": "a3"},
+                "active_game": {"game": "ultimate", "id": "g3", "game_order": 3},
+                "roster_selections": [
+                    {"player_id": "h3", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 3},
+                    {"player_id": "a3", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 3},
+                ],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(game3_queued_snap)
+            self.assertFalse(w.team1playerWidgets[2].IsActive())
+            self.assertEqual(w.team1stocks.value(), 0)
+
+            for _ in range(30):
+                w._OnTransitionTimerTick()
+
+            self.assertFalse(w._transition_timer.isActive())
             self.assertEqual(w.team1score.value(), 1)
             self.assertEqual(w.team2score.value(), 1)
             self.assertEqual(w.team1stocks.value(), 12)
             self.assertEqual(w.team2stocks.value(), 12)
             self.assertEqual(w.matchCombo.currentText(), "Match 3")
+            self.assertFalse(w.team1playerWidgets[1].IsActive())
+            self.assertTrue(w.team1playerWidgets[2].IsActive())
+            self.assertTrue(w.team2playerWidgets[2].IsActive())
             for pw in w.team1playerWidgets + w.team2playerWidgets:
-                self.assertFalse(pw.IsActive())
                 self.assertFalse(pw.IsEliminated())
                 self.assertEqual(pw.dynamicSpinner.value(), 3)
 
-            # Verify fallback when match text has no trailing digit ("Crew Battle")
+            # Verify fallback when match text has no trailing digit ("Crew Battle") after 30s delay
             w.matchCombo.setCurrentText("Crew Battle")
             win3_snap = {
                 "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 2, "away_score": 1, "status": "completed"},
@@ -871,9 +923,12 @@ class TestNexusRoomClient(unittest.TestCase):
                 "blind_picks": [],
             }
             w.ApplyNexusData(win3_snap)
+            for _ in range(30):
+                w._OnTransitionTimerTick()
             self.assertEqual(w.team1score.value(), 2)
             self.assertEqual(w.team2score.value(), 1)
             self.assertEqual(w.matchCombo.currentText(), "Match 4")
+            self.assertIn("Match complete (2 - 1)", w.lblNexusStatus.text())
         finally:
             TSHGameAssetManager.instance.SetGame = orig_set_game
 

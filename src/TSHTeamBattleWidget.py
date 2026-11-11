@@ -400,7 +400,7 @@ class TSHTeamBattleWidget(QDockWidget):
         if app:
             app.aboutToQuit.connect(self.nexusClient.disconnect)
 
-        # Nexus Game Transition Delay State (holds completed game on screen for 15s)
+        # Nexus Game Transition Delay State (holds completed game scoreboard for 30s)
         self._last_snapshot = None
         self._last_match_id = None
         self._initial_sync_done = False
@@ -412,6 +412,8 @@ class TSHTeamBattleWidget(QDockWidget):
         self._last_home_score = None
         self._last_away_score = None
         self._pending_snapshot = None
+        self._transition_start_sig = None
+        self._applying_hold_with_new_selections = False
         self._transition_seconds_left = 0
         self._completed_game_label = "Game"
         self._transition_timer = QTimer(self)
@@ -833,6 +835,8 @@ class TSHTeamBattleWidget(QDockWidget):
         if hasattr(self, "_transition_timer") and self._transition_timer.isActive():
             self._transition_timer.stop()
         self._pending_snapshot = None
+        self._transition_start_sig = None
+        self._applying_hold_with_new_selections = False
         self._last_snapshot = None
         self._last_match_id = None
         self._initial_sync_done = False
@@ -853,9 +857,90 @@ class TSHTeamBattleWidget(QDockWidget):
             setattr(pw, "_last_nexus_moveset", None)
             pw.moveset = None
 
+    @staticmethod
+    def _ToIntOrNone(val):
+        if val is None:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _SelectionSignature(snapshot: dict):
+        active_game = snapshot.get("active_game") or {}
+        live_state = snapshot.get("live_state") or {}
+        roster_selections = snapshot.get("roster_selections") or []
+        return (
+            active_game.get("id"),
+            live_state.get("home_active_player_id") or live_state.get("homeActivePlayerId"),
+            live_state.get("away_active_player_id") or live_state.get("awayActivePlayerId"),
+            tuple(
+                (s.get("player_id"), s.get("selected_character") or s.get("character"), s.get("slot_order"))
+                for s in roster_selections
+            ),
+        )
+
     def ApplyNexusData(self, snapshot: dict):
-        # After initial load, periodic snapshots only sync players going in (active)
-        # and choosing/changing characters without overwriting stocks or scoreboard info.
+        fixture = snapshot.get("fixture") or {}
+        incoming_match_id = fixture.get("id") or snapshot.get("slug") or fixture.get("slug")
+        is_new_match = (
+            getattr(self, "_last_match_id", None) is not None
+            and incoming_match_id is not None
+            and self._last_match_id != incoming_match_id
+        )
+
+        if getattr(self, "_transition_timer", None) and self._transition_timer.isActive():
+            if is_new_match:
+                self._transition_timer.stop()
+                self._pending_snapshot = None
+                self._transition_start_sig = None
+                self._transition_seconds_left = 0
+            else:
+                # Hold the completed game scoreboard for 30s while queueing the latest snapshot
+                self._pending_snapshot = snapshot
+                return
+
+        inc_h = self._ToIntOrNone(fixture.get("home_score"))
+        inc_a = self._ToIntOrNone(fixture.get("away_score"))
+        prv_h = self._ToIntOrNone(getattr(self, "_last_home_score", None))
+        prv_a = self._ToIntOrNone(getattr(self, "_last_away_score", None))
+        game_count_increased = (
+            bool(getattr(self, "_initial_sync_done", False))
+            and not is_new_match
+            and (
+                (prv_h is not None and inc_h is not None and inc_h > prv_h)
+                or (prv_a is not None and inc_a is not None and inc_a > prv_a)
+            )
+        )
+
+        if game_count_increased:
+            # Update series score immediately so OBS displays the game win while holding
+            # the completed game scoreboard for 30s before resetting for the next game.
+            self._syncing_stocks += 1
+            try:
+                if inc_h is not None:
+                    self.team1score.setValue(inc_h)
+                if inc_a is not None:
+                    self.team2score.setValue(inc_a)
+                self.TotalScoreExport()
+            finally:
+                self._syncing_stocks = max(0, self._syncing_stocks - 1)
+
+            completed_game_num = (inc_h or 0) + (inc_a or 0)
+            self._completed_game_label = f"Game {completed_game_num}"
+            self._pending_snapshot = snapshot
+            self._transition_start_sig = self._SelectionSignature(snapshot)
+            self._transition_seconds_left = 30
+            logger.info(
+                f"[TSHTeamBattleWidget] {self._completed_game_label} complete ({prv_h}-{prv_a} -> {inc_h}-{inc_a}); "
+                "holding scoreboard for 30s before resetting."
+            )
+            self.SetNexusStatus("transition", f"{self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
+            self._transition_timer.start(1000)
+            return
+
+        # Normal initial load or periodic sync (active status + character picks only)
         self._DoApplyNexusData(snapshot)
 
     def _OnTransitionTimerTick(self):
@@ -868,10 +953,25 @@ class TSHTeamBattleWidget(QDockWidget):
 
     def _ApplyPendingGameSnapshot(self):
         snapshot = self._pending_snapshot
+        start_sig = getattr(self, "_transition_start_sig", None)
         self._pending_snapshot = None
+        self._transition_start_sig = None
         if snapshot:
-            self._DoApplyNexusData(snapshot)
-            self.SetNexusStatus("connected", "Connected")
+            self._applying_hold_with_new_selections = (
+                start_sig is not None and self._SelectionSignature(snapshot) != start_sig
+            )
+            try:
+                self._DoApplyNexusData(snapshot)
+            finally:
+                self._applying_hold_with_new_selections = False
+            fixture = snapshot.get("fixture") or {}
+            live_state = snapshot.get("live_state") or {}
+            if fixture.get("status") == "completed" or live_state.get("phase") == "complete":
+                home_score = int(fixture.get("home_score") or 0)
+                away_score = int(fixture.get("away_score") or 0)
+                self.SetNexusStatus("connected", f"Match complete ({home_score} - {away_score})")
+            else:
+                self.SetNexusStatus("connected", "Connected")
 
     def _OnGameAssetsLoaded(self):
         if getattr(self, "_awaiting_asset_reapply", False) and getattr(self, "_last_snapshot", None):
@@ -945,18 +1045,10 @@ class TSHTeamBattleWidget(QDockWidget):
                 live_state.get("phase") == "complete"
             )
 
-            def _to_int_or_none(val):
-                if val is None:
-                    return None
-                try:
-                    return int(val)
-                except (ValueError, TypeError):
-                    return None
-
-            inc_h = _to_int_or_none(fixture.get("home_score"))
-            inc_a = _to_int_or_none(fixture.get("away_score"))
-            prv_h = _to_int_or_none(getattr(self, "_last_home_score", None))
-            prv_a = _to_int_or_none(getattr(self, "_last_away_score", None))
+            inc_h = self._ToIntOrNone(fixture.get("home_score"))
+            inc_a = self._ToIntOrNone(fixture.get("away_score"))
+            prv_h = self._ToIntOrNone(getattr(self, "_last_home_score", None))
+            prv_a = self._ToIntOrNone(getattr(self, "_last_away_score", None))
             game_count_increased = (
                 not is_initial_load
                 and not reapply_assets
@@ -998,6 +1090,7 @@ class TSHTeamBattleWidget(QDockWidget):
 
                 for pw in getattr(self, "playerWidgets", []):
                     pw.SetActiveStatus(False)
+                self._last_effective_active = {}
                 self.ResetAllStocks()
 
             # Only populate scoreboard, team info, stocks, rules, and game on the initial load
@@ -1239,7 +1332,7 @@ class TSHTeamBattleWidget(QDockWidget):
                         team_selections.sort(key=lambda item: int(item[1].get("slot_order") or 0))
                         effective_active_id = team_selections[-1][0].get("id")
 
-                if game_count_increased:
+                if game_count_increased and not getattr(self, "_applying_hold_with_new_selections", False):
                     effective_active_id = None
 
                 if effective_active_id is not None:
