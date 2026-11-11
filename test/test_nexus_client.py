@@ -705,6 +705,178 @@ class TestNexusRoomClient(unittest.TestCase):
         finally:
             TSHGameAssetManager.instance.SetGame = orig_set_game
 
+    def test_game_count_increase_resets_scoreboard_and_syncs_score(self):
+        """When home_score or away_score increases during periodic sync:
+        - sync team1score / team2score
+        - move all players out of active
+        - reset team stocks to 12 and all player spinners to 3 (not eliminated)
+        - increment the Match text
+        """
+        from qtpy.QtWidgets import QApplication
+        from qtpy.QtGui import QStandardItem
+        from qtpy.QtCore import Qt
+        from src.TSHTeamBattleWidget import TSHTeamBattleWidget
+        from src.TSHGameAssetManager import TSHGameAssetManager
+
+        app = QApplication.instance() or QApplication([])
+        self.assertIsNotNone(app)
+
+        orig_set_game = TSHGameAssetManager.instance.SetGame
+        TSHGameAssetManager.instance.SetGame = lambda *a, **kw: None
+        try:
+            if TSHGameAssetManager.instance.characterModel.rowCount() == 0:
+                empty_it = QStandardItem("")
+                empty_it.setData({}, Qt.ItemDataRole.UserRole)
+                TSHGameAssetManager.instance.characterModel.appendRow(empty_it)
+            for cname, ccode in [("Fox", "fox"), ("Mario", "mario")]:
+                found = False
+                for r in range(TSHGameAssetManager.instance.characterModel.rowCount()):
+                    itm = TSHGameAssetManager.instance.characterModel.item(r).data(Qt.ItemDataRole.UserRole)
+                    if itm and itm.get("en_name") == cname:
+                        found = True
+                        break
+                if not found:
+                    it = QStandardItem(cname)
+                    it.setData({"en_name": cname, "name": cname, "codename": ccode}, Qt.ItemDataRole.UserRole)
+                    TSHGameAssetManager.instance.characterModel.appendRow(it)
+
+            w = TSHTeamBattleWidget()
+            home_players = [{"id": f"h{i}", "team_id": "t1", "tag": f"Home{i}"} for i in range(1, 5)]
+            away_players = [{"id": f"a{i}", "team_id": "t2", "tag": f"Away{i}"} for i in range(1, 5)]
+
+            initial_snap = {
+                "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 0, "away_score": 0},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": home_players + away_players,
+                "live_state": {"round_number": 1, "phase": "playing", "home_active_player_id": "h1", "away_active_player_id": "a1"},
+                "active_game": {"game": "ultimate", "id": "g1", "game_order": 1},
+                "roster_selections": [
+                    {"player_id": "h1", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 3},
+                    {"player_id": "a1", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 3},
+                ],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(initial_snap)
+
+            self.assertEqual(w.team1stocks.value(), 12)
+            self.assertEqual(w.team2stocks.value(), 12)
+            self.assertEqual(w.team1score.value(), 0)
+            self.assertEqual(w.team2score.value(), 0)
+            self.assertEqual(w.matchCombo.currentText(), "Round 1")
+            self.assertTrue(w.team1playerWidgets[0].IsActive())
+            self.assertTrue(w.team2playerWidgets[0].IsActive())
+
+            # Simulate Game 1 progress before Team 1 wins:
+            # several players eliminated/low stocks, active flags set, Match edited to "Match 1"
+            w.matchCombo.setCurrentText("Match 1")
+            w.team1stocks.setValue(4)
+            w.team2stocks.setValue(0)
+            w.team1playerWidgets[0].dynamicSpinner.setValue(0)
+            w.team1playerWidgets[0].SetEliminatedStatus(True)
+            w.team1playerWidgets[1].dynamicSpinner.setValue(1)
+            w.team1playerWidgets[1].SetActiveStatus(True)
+            for pw in w.team2playerWidgets:
+                pw.dynamicSpinner.setValue(0)
+                pw.SetEliminatedStatus(True)
+
+            # Periodic update: Team 1 wins Game 1 -> home_score becomes 1 (even if snapshot still carries Game 1 active ids)
+            win1_snap = {
+                "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 1, "away_score": 0},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": home_players + away_players,
+                "live_state": {"round_number": 4, "phase": "playing", "home_active_player_id": "h1", "away_active_player_id": "a1"},
+                "active_game": {"game": "ultimate", "id": "g2", "game_order": 2},
+                "roster_selections": [
+                    {"player_id": "h1", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 1},
+                    {"player_id": "a1", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 0},
+                ],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(win1_snap)
+
+            self.assertEqual(w.team1score.value(), 1)
+            self.assertEqual(w.team2score.value(), 0)
+            self.assertEqual(w.team1stocks.value(), 12)
+            self.assertEqual(w.team2stocks.value(), 12)
+            self.assertEqual(w.matchCombo.currentText(), "Match 2")
+            for pw in w.team1playerWidgets + w.team2playerWidgets:
+                self.assertFalse(pw.IsActive())
+                self.assertFalse(pw.IsEliminated())
+                self.assertEqual(pw.dynamicSpinner.value(), 3)
+
+            # Game 2 starts: h2 and a2 are sent in -> they SHOULD become active again
+            game2_active_snap = {
+                "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 1, "away_score": 0},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": home_players + away_players,
+                "live_state": {"round_number": 1, "phase": "playing", "home_active_player_id": "h2", "away_active_player_id": "a2"},
+                "active_game": {"game": "ultimate", "id": "g2", "game_order": 2},
+                "roster_selections": [
+                    {"player_id": "h2", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 3},
+                    {"player_id": "a2", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 3},
+                ],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(game2_active_snap)
+            self.assertTrue(w.team1playerWidgets[1].IsActive())
+            self.assertTrue(w.team2playerWidgets[1].IsActive())
+            self.assertFalse(w.team1playerWidgets[0].IsActive())
+
+            # Team 2 wins Game 2 -> away_score increases 0 -> 1, Match increments to Match 3 & resets again
+            w.team1stocks.setValue(0)
+            w.team2stocks.setValue(3)
+            w.team1playerWidgets[1].dynamicSpinner.setValue(0)
+            w.team1playerWidgets[1].SetEliminatedStatus(True)
+
+            win2_snap = {
+                "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 1, "away_score": 1},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": home_players + away_players,
+                "live_state": {"round_number": 1, "phase": "playing", "home_active_player_id": None, "away_active_player_id": None},
+                "active_game": {"game": "ultimate", "id": "g3", "game_order": 3},
+                "roster_selections": [],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(win2_snap)
+
+            self.assertEqual(w.team1score.value(), 1)
+            self.assertEqual(w.team2score.value(), 1)
+            self.assertEqual(w.team1stocks.value(), 12)
+            self.assertEqual(w.team2stocks.value(), 12)
+            self.assertEqual(w.matchCombo.currentText(), "Match 3")
+            for pw in w.team1playerWidgets + w.team2playerWidgets:
+                self.assertFalse(pw.IsActive())
+                self.assertFalse(pw.IsEliminated())
+                self.assertEqual(pw.dynamicSpinner.value(), 3)
+
+            # Verify fallback when match text has no trailing digit ("Crew Battle")
+            w.matchCombo.setCurrentText("Crew Battle")
+            win3_snap = {
+                "fixture": {"id": "match-game-reset", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 2, "away_score": 1, "status": "completed"},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": home_players + away_players,
+                "live_state": {"round_number": 1, "phase": "complete", "home_active_player_id": None, "away_active_player_id": None},
+                "active_game": {"game": "ultimate", "id": "g3", "game_order": 3},
+                "roster_selections": [],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(win3_snap)
+            self.assertEqual(w.team1score.value(), 2)
+            self.assertEqual(w.team2score.value(), 1)
+            self.assertEqual(w.matchCombo.currentText(), "Match 4")
+        finally:
+            TSHGameAssetManager.instance.SetGame = orig_set_game
+
 
 if __name__ == "__main__":
     unittest.main()

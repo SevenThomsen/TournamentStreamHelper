@@ -4,6 +4,7 @@ from qtpy.QtGui import QIcon, QAction
 from qtpy import uic
 from typing import List
 import math
+import re
 from loguru import logger
 from .SettingsManager import SettingsManager
 from .StateManager import StateManager
@@ -469,7 +470,7 @@ class TSHTeamBattleWidget(QDockWidget):
             self.team1stocks.setValue(active_combatants1 * stk_per_player)
             self.team2stocks.setValue(active_combatants2 * stk_per_player)
         finally:
-            self._syncing_stocks = 0
+            self._syncing_stocks = max(0, self._syncing_stocks - 1)
         self.TotalScoreExport()
 
     def ResetEverything(self):
@@ -485,7 +486,7 @@ class TSHTeamBattleWidget(QDockWidget):
             self.team1stocks.setValue(active_combatants1 * stk_per_player)
             self.team2stocks.setValue(active_combatants2 * stk_per_player)
         finally:
-            self._syncing_stocks = 0
+            self._syncing_stocks = max(0, self._syncing_stocks - 1)
         self.TotalScoreExport()
     
     def SetSpinnerForPlayers(self):
@@ -916,6 +917,8 @@ class TSHTeamBattleWidget(QDockWidget):
                     pw.Clear(no_mains=False)
                 self._last_round_number = None
                 self._last_effective_active = {}
+                self._last_home_score = None
+                self._last_away_score = None
                 self._initial_sync_done = False
 
             is_initial_load = (not getattr(self, "_initial_sync_done", False)) or is_new_match
@@ -936,6 +939,66 @@ class TSHTeamBattleWidget(QDockWidget):
             game_type = active_game.get("game", "ultimate")
             stocks_per_player = 4 if game_type == "melee" else 3
             tournament_season = snapshot.get("tournament_season") or {}
+
+            is_match_complete = (
+                fixture.get("status") == "completed" or
+                live_state.get("phase") == "complete"
+            )
+
+            def _to_int_or_none(val):
+                if val is None:
+                    return None
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    return None
+
+            inc_h = _to_int_or_none(fixture.get("home_score"))
+            inc_a = _to_int_or_none(fixture.get("away_score"))
+            prv_h = _to_int_or_none(getattr(self, "_last_home_score", None))
+            prv_a = _to_int_or_none(getattr(self, "_last_away_score", None))
+            game_count_increased = (
+                not is_initial_load
+                and not reapply_assets
+                and (
+                    (prv_h is not None and inc_h is not None and inc_h > prv_h)
+                    or (prv_a is not None and inc_a is not None and inc_a > prv_a)
+                )
+            )
+            if game_count_increased:
+                logger.info(
+                    f"[TSHTeamBattleWidget] Game count increased ({prv_h}-{prv_a} -> {inc_h}-{inc_a}); "
+                    "syncing series score, incrementing match, deactivating players, and resetting stocks."
+                )
+                if inc_h is not None:
+                    self.team1score.setValue(inc_h)
+                if inc_a is not None:
+                    self.team2score.setValue(inc_a)
+
+                cur_match = (self.matchCombo.currentText() or "").strip()
+                m_match = re.search(r"^(.*?)(\d+)\s*$", cur_match)
+                if m_match:
+                    new_match = f"{m_match.group(1)}{int(m_match.group(2)) + 1}"
+                else:
+                    next_num = (inc_h or 0) + (inc_a or 0) + 1
+                    if not cur_match or cur_match.lower() == "crew battle":
+                        new_match = f"Match {next_num}"
+                    else:
+                        new_match = f"{cur_match} {next_num}"
+                if self.matchCombo.isEditable():
+                    self.matchCombo.setCurrentText(new_match)
+                else:
+                    idx = self.matchCombo.findText(new_match)
+                    if idx >= 0:
+                        self.matchCombo.setCurrentIndex(idx)
+                    else:
+                        self.matchCombo.addItem(new_match)
+                        self.matchCombo.setCurrentIndex(self.matchCombo.count() - 1)
+                self.MatchExport()
+
+                for pw in getattr(self, "playerWidgets", []):
+                    pw.SetActiveStatus(False)
+                self.ResetAllStocks()
 
             # Only populate scoreboard, team info, stocks, rules, and game on the initial load
             if is_initial_load:
@@ -1176,6 +1239,9 @@ class TSHTeamBattleWidget(QDockWidget):
                         team_selections.sort(key=lambda item: int(item[1].get("slot_order") or 0))
                         effective_active_id = team_selections[-1][0].get("id")
 
+                if game_count_increased:
+                    effective_active_id = None
+
                 if effective_active_id is not None:
                     effective_active_id = str(effective_active_id)
                 current_effective_active[team_idx] = effective_active_id
@@ -1364,10 +1430,6 @@ class TSHTeamBattleWidget(QDockWidget):
             self._last_home_score = fixture.get("home_score")
             self._last_away_score = fixture.get("away_score")
 
-            is_match_complete = (
-                fixture.get("status") == "completed" or
-                live_state.get("phase") == "complete"
-            )
             if is_match_complete:
                 home_score = int(fixture.get("home_score") or 0)
                 away_score = int(fixture.get("away_score") or 0)
