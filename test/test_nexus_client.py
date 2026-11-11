@@ -510,6 +510,201 @@ class TestNexusRoomClient(unittest.TestCase):
         self.assertEqual(var_elem.currentText(), "2332")
         self.assertEqual(getattr(pw, "moveset", None), "2332")
 
+    def test_crew_battle_stocks_locked_to_12_on_import_with_large_roster(self):
+        from src.TSHTeamBattleWidget import TSHTeamBattleWidget
+        from src.TSHGameAssetManager import TSHGameAssetManager
+
+        orig_set_game = TSHGameAssetManager.instance.SetGame
+        TSHGameAssetManager.instance.SetGame = lambda *a, **kw: None
+        try:
+            w = TSHTeamBattleWidget()
+            large_roster_snapshot = {
+                "fixture": {"id": "match-roster-9", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3},
+                "home_team": {"id": "t1", "name": "Team One"},
+                "away_team": {"id": "t2", "name": "Team Two"},
+                "players": [{"id": f"p{i}", "team_id": "t1", "tag": f"Player {i}"} for i in range(9)] +
+                           [{"id": f"q{i}", "team_id": "t2", "tag": f"Opponent {i}"} for i in range(9)],
+                "live_state": None,
+                "active_game": {"game": "ultimate"},
+                "roster_selections": [],
+                "blind_picks": [],
+            }
+            w._DoApplyNexusData(large_roster_snapshot)
+            self.assertEqual(w.team1stocks.value(), 12)
+            self.assertEqual(w.team2stocks.value(), 12)
+
+            # Resetting player mode values must also cap to 12 (4 combatants * 3 stocks)
+            w.ResetAllStocks()
+            self.assertEqual(w.team1stocks.value(), 12)
+            self.assertEqual(w.team2stocks.value(), 12)
+        finally:
+            TSHGameAssetManager.instance.SetGame = orig_set_game
+
+    def test_new_match_connection_clears_old_player_characters(self):
+        from src.TSHTeamBattleWidget import TSHTeamBattleWidget
+        from src.TSHGameAssetManager import TSHGameAssetManager
+
+        orig_set_game = TSHGameAssetManager.instance.SetGame
+        TSHGameAssetManager.instance.SetGame = lambda *a, **kw: None
+        try:
+            w = TSHTeamBattleWidget()
+            s1 = {
+                "fixture": {"id": "match-alpha", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3},
+                "home_team": {"id": "t1", "name": "Team Alpha"},
+                "away_team": {"id": "t2", "name": "Team Beta"},
+                "players": [{"id": "p1", "team_id": "t1", "tag": "PlayerAlpha1"}],
+                "live_state": None,
+                "active_game": {"game": "ultimate"},
+                "roster_selections": [{"player_id": "p1", "selected_character": "Fox", "slot_order": 1}],
+                "blind_picks": [],
+            }
+            w._DoApplyNexusData(s1)
+            self.assertEqual(getattr(w.team1playerWidgets[0], "_last_loaded_player_id", None), "p1")
+
+            # Now connect to match-bravo with an unselected player in slot 1
+            s2 = {
+                "fixture": {"id": "match-bravo", "home_team_id": "t3", "away_team_id": "t4", "best_of": 3},
+                "home_team": {"id": "t3", "name": "Team Gamma"},
+                "away_team": {"id": "t4", "name": "Team Delta"},
+                "players": [{"id": "p_new", "team_id": "t3", "tag": "UnknownPlayerNoDB"}],
+                "live_state": None,
+                "active_game": {"game": "ultimate"},
+                "roster_selections": [],
+                "blind_picks": [],
+            }
+            w._DoApplyNexusData(s2)
+            self.assertEqual(getattr(w.team1playerWidgets[0], "_last_loaded_player_id", None), "p_new")
+            # Character element should be reset to empty / 0 or -1, not Fox
+            char_elem = w.team1playerWidgets[0].character_elements[0][1]
+            self.assertIn(char_elem.currentIndex(), (-1, 0))
+            self.assertNotEqual(char_elem.currentText(), "Fox")
+        finally:
+            TSHGameAssetManager.instance.SetGame = orig_set_game
+
+    def test_periodic_sync_only_updates_active_and_characters(self):
+        from src.TSHTeamBattleWidget import TSHTeamBattleWidget
+        from src.TSHGameAssetManager import TSHGameAssetManager
+        from qtpy.QtGui import QStandardItem
+        from qtpy.QtWidgets import QLineEdit
+        from qtpy.QtCore import Qt
+
+        orig_set_game = TSHGameAssetManager.instance.SetGame
+        TSHGameAssetManager.instance.SetGame = lambda *a, **kw: None
+        try:
+            # Ensure empty item + Mario, Fox, and Mii Brawler exist in characterModel
+            if TSHGameAssetManager.instance.characterModel.rowCount() == 0:
+                empty_it = QStandardItem("")
+                empty_it.setData({}, Qt.ItemDataRole.UserRole)
+                TSHGameAssetManager.instance.characterModel.appendRow(empty_it)
+            for cname, ccode in [("Mario", "mario"), ("Fox", "fox"), ("Mii Brawler", "miifighter")]:
+                found = False
+                for r in range(TSHGameAssetManager.instance.characterModel.rowCount()):
+                    itm = TSHGameAssetManager.instance.characterModel.item(r).data(Qt.ItemDataRole.UserRole)
+                    if itm and itm.get("en_name") == cname:
+                        found = True
+                        break
+                if not found:
+                    it = QStandardItem(cname)
+                    it.setData({"en_name": cname, "name": cname, "codename": ccode}, Qt.ItemDataRole.UserRole)
+                    TSHGameAssetManager.instance.characterModel.appendRow(it)
+
+            w = TSHTeamBattleWidget()
+            # 1. Initial load
+            initial_snap = {
+                "fixture": {"id": "match-periodic-1", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 0, "away_score": 0},
+                "home_team": {"id": "t1", "name": "Alpha", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup", "name": "Week 1"},
+                "players": [
+                    {"id": "p1", "team_id": "t1", "tag": "Player1"},
+                    {"id": "p2", "team_id": "t1", "tag": "Player2"},
+                    {"id": "p3", "team_id": "t1", "tag": "Player3"},
+                    {"id": "q1", "team_id": "t2", "tag": "Opp1"},
+                ],
+                "live_state": {"round_number": 1, "phase": "playing", "home_active_player_id": "p1", "away_active_player_id": "q1", "home_stocks": 9, "away_stocks": 3},
+                "active_game": {"game": "ultimate", "id": "g1", "game_order": 1},
+                "roster_selections": [
+                    {"player_id": "p1", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 3},
+                    {"player_id": "q1", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 3},
+                ],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(initial_snap)
+
+            self.assertEqual(w.team1stocks.value(), 9)
+            self.assertEqual(w.team1score.value(), 0)
+            self.assertEqual(w.bestOf.value(), 3)
+            self.assertEqual(w.matchCombo.currentText(), "Round 1")
+            self.assertTrue(w.team1playerWidgets[0].IsActive())
+            self.assertFalse(w.team1playerWidgets[1].IsActive())
+            self.assertFalse(w.team1playerWidgets[2].IsActive())
+            self.assertEqual(w.team1playerWidgets[0].character_elements[0][1].currentText(), "Fox")
+
+            # 2. Stream operator manually modifies scoreboard info, stocks, tags, and movesets
+            w.team1playerWidgets[0].dynamicSpinner.setValue(0)
+            w.team1playerWidgets[0].SetEliminatedStatus(True)
+            w.team1playerWidgets[0].findChild(QLineEdit, "name").setText("Player1 Custom")
+            w.team1playerWidgets[2].dynamicSpinner.setValue(2)
+            w.team1stocks.setValue(4)
+            w.team2stocks.setValue(2)
+            w.team1score.setValue(1)
+            w.bestOf.setValue(5)
+            w.matchCombo.setCurrentText("Grand Finals")
+            w.phaseCombo.setCurrentText("Top 8")
+            w.team1column.findChild(QLineEdit, "teamName").setText("Alpha Edited")
+
+            # 3. Periodic update: Round 2 starts, p3 goes in and picks Mii Brawler (1332),
+            #    while snapshot carries different scores/stocks/team names/round_number
+            periodic_snap = {
+                "fixture": {"id": "match-periodic-1", "home_team_id": "t1", "away_team_id": "t2", "best_of": 3, "home_score": 0, "away_score": 0, "status": "completed"},
+                "home_team": {"id": "t1", "name": "Alpha ServerName", "short_name": "ALP"},
+                "away_team": {"id": "t2", "name": "Beta ServerName", "short_name": "BET"},
+                "tournament_season": {"tournament_name": "Nexus Cup Server", "name": "Week 1 Server"},
+                "players": [
+                    {"id": "p1", "team_id": "t1", "tag": "Player1"},
+                    {"id": "p2", "team_id": "t1", "tag": "Player2"},
+                    {"id": "p3", "team_id": "t1", "tag": "Player3"},
+                    {"id": "q1", "team_id": "t2", "tag": "Opp1"},
+                ],
+                "live_state": {"round_number": 2, "phase": "complete", "home_active_player_id": "p3", "away_active_player_id": "q1", "home_stocks": 12, "away_stocks": 12},
+                "active_game": {"game": "ultimate", "id": "g2", "game_order": 2},
+                "roster_selections": [
+                    {"player_id": "p1", "slot_order": 1, "selected_character": "Fox", "stocks_remaining": 3},
+                    {"player_id": "p3", "slot_order": 2, "selected_character": "Mii Brawler (1332)", "stocks_remaining": 3},
+                    {"player_id": "q1", "slot_order": 1, "selected_character": "Mario", "stocks_remaining": 3},
+                ],
+                "blind_picks": [],
+            }
+            w.ApplyNexusData(periodic_snap)
+
+            # Manual scoreboard info and stocks MUST remain completely untouched!
+            self.assertEqual(w.team1stocks.value(), 4)
+            self.assertEqual(w.team2stocks.value(), 2)
+            self.assertEqual(w.team1score.value(), 1)
+            self.assertEqual(w.bestOf.value(), 5)
+            self.assertEqual(w.matchCombo.currentText(), "Grand Finals")
+            self.assertEqual(w.phaseCombo.currentText(), "Top 8")
+            self.assertEqual(w.team1column.findChild(QLineEdit, "teamName").text(), "Alpha Edited")
+            self.assertEqual(w.team1playerWidgets[0].dynamicSpinner.value(), 0)
+            self.assertTrue(w.team1playerWidgets[0].IsEliminated())
+            self.assertEqual(w.team1playerWidgets[0].findChild(QLineEdit, "name").text(), "Player1 Custom")
+            self.assertEqual(w.team1playerWidgets[2].dynamicSpinner.value(), 2)
+
+            # Active status and character pick MUST sync in p3's existing widget slot!
+            self.assertFalse(w.team1playerWidgets[0].IsActive())
+            self.assertFalse(w.team1playerWidgets[1].IsActive())
+            self.assertTrue(w.team1playerWidgets[2].IsActive())
+            self.assertEqual(w.team1playerWidgets[2].character_elements[0][1].currentText(), "Mii Brawler")
+            self.assertEqual(w.team1playerWidgets[2].character_elements[0][3].currentText(), "1332")
+
+            # 4. Subsequent periodic update where operator changed moveset manually to 2222
+            #    and Nexus hasn't changed p3's pick -> must NOT overwrite operator's moveset edit
+            w.team1playerWidgets[2].character_elements[0][3].setEditText("2222")
+            w.ApplyNexusData(periodic_snap)
+            self.assertEqual(w.team1playerWidgets[2].character_elements[0][3].currentText(), "2222")
+        finally:
+            TSHGameAssetManager.instance.SetGame = orig_set_game
+
 
 if __name__ == "__main__":
     unittest.main()

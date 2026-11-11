@@ -67,6 +67,9 @@ class TSHTeamBattleWidget(QDockWidget):
     def __init__(self, *args):
         super().__init__(*args)
         TSHTeamBattleWidget.instance = self
+        self.playerWidgets = []
+        self.team1playerWidgets = []
+        self.team2playerWidgets = []
         logger.info("BATTLE START")
         self.signals = TSHTeamBattleSignals()
 
@@ -398,6 +401,9 @@ class TSHTeamBattleWidget(QDockWidget):
 
         # Nexus Game Transition Delay State (holds completed game on screen for 15s)
         self._last_snapshot = None
+        self._last_match_id = None
+        self._initial_sync_done = False
+        self._awaiting_asset_reapply = False
         self._last_game_id = None
         self._last_game_order = None
         self._last_round_number = None
@@ -457,8 +463,11 @@ class TSHTeamBattleWidget(QDockWidget):
             for pw in self.playerWidgets:
                 pw.ResetDynamicSpinner()
             stk_per_player = self.livesNumber.value() if self.livesNumber.value() > 0 else 3
-            self.team1stocks.setValue(len(self.team1playerWidgets) * stk_per_player)
-            self.team2stocks.setValue(len(self.team2playerWidgets) * stk_per_player)
+            # In The Nexus crew battles (strictly 4v4), maximum active combatants is 4 (12 stocks max)
+            active_combatants1 = min(4, len(self.team1playerWidgets))
+            active_combatants2 = min(4, len(self.team2playerWidgets))
+            self.team1stocks.setValue(active_combatants1 * stk_per_player)
+            self.team2stocks.setValue(active_combatants2 * stk_per_player)
         finally:
             self._syncing_stocks = 0
         self.TotalScoreExport()
@@ -470,8 +479,11 @@ class TSHTeamBattleWidget(QDockWidget):
                 pw.ResetDynamicSpinner()
                 pw.Clear()
             stk_per_player = self.livesNumber.value() if self.livesNumber.value() > 0 else 3
-            self.team1stocks.setValue(len(self.team1playerWidgets) * stk_per_player)
-            self.team2stocks.setValue(len(self.team2playerWidgets) * stk_per_player)
+            # In The Nexus crew battles (strictly 4v4), maximum active combatants is 4 (12 stocks max)
+            active_combatants1 = min(4, len(self.team1playerWidgets))
+            active_combatants2 = min(4, len(self.team2playerWidgets))
+            self.team1stocks.setValue(active_combatants1 * stk_per_player)
+            self.team2stocks.setValue(active_combatants2 * stk_per_player)
         finally:
             self._syncing_stocks = 0
         self.TotalScoreExport()
@@ -820,6 +832,10 @@ class TSHTeamBattleWidget(QDockWidget):
         if hasattr(self, "_transition_timer") and self._transition_timer.isActive():
             self._transition_timer.stop()
         self._pending_snapshot = None
+        self._last_snapshot = None
+        self._last_match_id = None
+        self._initial_sync_done = False
+        self._awaiting_asset_reapply = False
         self._last_game_id = None
         self._last_game_order = None
         self._last_round_number = None
@@ -827,82 +843,18 @@ class TSHTeamBattleWidget(QDockWidget):
         self._last_home_score = None
         self._last_away_score = None
         self._transition_seconds_left = 0
+        for pw in getattr(self, "playerWidgets", []):
+            setattr(pw, "_live_char", None)
+            setattr(pw, "_live_skin", None)
+            setattr(pw, "_last_loaded_player_id", None)
+            setattr(pw, "_last_loaded_player_tag", None)
+            setattr(pw, "_last_nexus_char", None)
+            setattr(pw, "_last_nexus_moveset", None)
+            pw.moveset = None
 
     def ApplyNexusData(self, snapshot: dict):
-        if getattr(self, "_transition_timer", None) and self._transition_timer.isActive():
-            # While holding the completed game display for 30s, queue the latest snapshot
-            self._pending_snapshot = snapshot
-            return
-
-        fixture = snapshot.get("fixture") or {}
-        active_game = snapshot.get("active_game") or {}
-        live_state = snapshot.get("live_state") or {}
-
-        incoming_game_id = active_game.get("id")
-        incoming_game_order = active_game.get("game_order")
-        incoming_home_score = fixture.get("home_score")
-        incoming_away_score = fixture.get("away_score")
-        is_match_complete = (
-            fixture.get("status") == "completed" or
-            live_state.get("phase") == "complete"
-        )
-
-        is_game_transition = False
-        if self._last_game_order is not None and incoming_game_order is not None:
-            if incoming_game_order > self._last_game_order:
-                is_game_transition = True
-        elif self._last_game_id is not None and incoming_game_id is not None:
-            if incoming_game_id != self._last_game_id:
-                is_game_transition = True
-
-        if is_game_transition and not is_match_complete:
-            # Game completed! Hold the final completed board for 30s before applying the new game.
-            # 1. Update series score immediately so OBS diamond displays the new game win
-            if incoming_home_score is not None:
-                self.team1score.setValue(int(incoming_home_score))
-            if incoming_away_score is not None:
-                self.team2score.setValue(int(incoming_away_score))
-
-            # 2. Mark the losing team at 0 stocks
-            home_won = (
-                self._last_home_score is not None and incoming_home_score is not None and
-                int(incoming_home_score) > int(self._last_home_score)
-            )
-            away_won = (
-                self._last_away_score is not None and incoming_away_score is not None and
-                int(incoming_away_score) > int(self._last_away_score)
-            )
-            if not home_won and not away_won:
-                if incoming_home_score is not None and incoming_away_score is not None:
-                    if int(incoming_home_score) > int(self._last_home_score or 0):
-                        home_won = True
-                    elif int(incoming_away_score) > int(self._last_away_score or 0):
-                        away_won = True
-
-            if home_won:
-                self.team2stocks.setValue(0)
-                for pw in self.team2playerWidgets:
-                    if pw.IsActive():
-                        pw.dynamicSpinner.setValue(0)
-                        pw.SetEliminatedStatus(True)
-            elif away_won:
-                self.team1stocks.setValue(0)
-                for pw in self.team1playerWidgets:
-                    if pw.IsActive():
-                        pw.dynamicSpinner.setValue(0)
-                        pw.SetEliminatedStatus(True)
-
-            self.TotalScoreExport()
-
-            # 3. Queue snapshot and start 30s countdown
-            self._pending_snapshot = snapshot
-            self._transition_seconds_left = 30
-            completed_game_num = self._last_game_order or (incoming_game_order - 1 if incoming_game_order else 1)
-            self._completed_game_label = f"Game {completed_game_num}"
-            self.SetNexusStatus("transition", f"{self._completed_game_label} complete. Next game in {self._transition_seconds_left}s...")
-            self._transition_timer.start(1000)
-            return
-
+        # After initial load, periodic snapshots only sync players going in (active)
+        # and choosing/changing characters without overwriting stocks or scoreboard info.
         self._DoApplyNexusData(snapshot)
 
     def _OnTransitionTimerTick(self):
@@ -921,15 +873,16 @@ class TSHTeamBattleWidget(QDockWidget):
             self.SetNexusStatus("connected", "Connected")
 
     def _OnGameAssetsLoaded(self):
-        if getattr(self, "_last_snapshot", None):
+        if getattr(self, "_awaiting_asset_reapply", False) and getattr(self, "_last_snapshot", None):
             logger.info("[TSHTeamBattleWidget] Game assets loaded; scheduling re-application of live match data")
             QTimer.singleShot(0, self._ReapplyNexusSnapshot)
 
     def _ReapplyNexusSnapshot(self):
+        self._awaiting_asset_reapply = False
         if getattr(self, "_last_snapshot", None):
-            self._DoApplyNexusData(self._last_snapshot)
+            self._DoApplyNexusData(self._last_snapshot, reapply_assets=True)
 
-    def _DoApplyNexusData(self, snapshot: dict):
+    def _DoApplyNexusData(self, snapshot: dict, reapply_assets: bool = False):
         self._last_snapshot = snapshot
         try:
             StateManager.BlockSaving()
@@ -944,25 +897,34 @@ class TSHTeamBattleWidget(QDockWidget):
             roster_selections = snapshot.get("roster_selections") or []
             blind_picks = snapshot.get("blind_picks") or []
 
-            # 1. Team Names
-            home_name = home_team.get("name") or home_team.get("short_name") or ""
-            away_name = away_team.get("name") or away_team.get("short_name") or ""
-            if home_name:
-                t1 = self.team1column.findChild(QLineEdit, "teamName")
-                if t1 and t1.text() != home_name:
-                    t1.setText(home_name)
-                    self.Team1SponsorExport()
-            if away_name:
-                t2 = self.team2column.findChild(QLineEdit, "teamName")
-                if t2 and t2.text() != away_name:
-                    t2.setText(away_name)
-                    self.Team2SponsorExport()
+            incoming_match_id = fixture.get("id") or snapshot.get("slug") or fixture.get("slug")
+            is_new_match = (
+                getattr(self, "_last_match_id", None) is not None
+                and incoming_match_id is not None
+                and self._last_match_id != incoming_match_id
+            )
+            if is_new_match:
+                logger.info(f"[TSHTeamBattleWidget] Connecting to new match: {incoming_match_id} (was {self._last_match_id})")
+                for pw in getattr(self, "playerWidgets", []):
+                    pw._live_char = None
+                    pw._live_skin = None
+                    pw._last_loaded_player_id = None
+                    pw._last_loaded_player_tag = None
+                    pw._last_nexus_char = None
+                    pw._last_nexus_moveset = None
+                    pw.moveset = None
+                    pw.Clear(no_mains=False)
+                self._last_round_number = None
+                self._last_effective_active = {}
+                self._initial_sync_done = False
 
-            # 2. Match Scores (Series & Remaining Team Stocks)
-            if fixture.get("home_score") is not None:
-                self.team1score.setValue(int(fixture.get("home_score")))
-            if fixture.get("away_score") is not None:
-                self.team2score.setValue(int(fixture.get("away_score")))
+            is_initial_load = (not getattr(self, "_initial_sync_done", False)) or is_new_match
+            self._last_match_id = incoming_match_id
+
+            home_team_id = fixture.get("home_team_id")
+            away_team_id = fixture.get("away_team_id")
+            home_players = [p for p in players if p.get("team_id") == home_team_id]
+            away_players = [p for p in players if p.get("team_id") == away_team_id]
 
             round_num = live_state.get("round_number")
             if round_num is not None:
@@ -970,89 +932,114 @@ class TSHTeamBattleWidget(QDockWidget):
                     round_num = int(round_num)
                 except (ValueError, TypeError):
                     pass
-            is_new_round = (self._last_round_number is not None and round_num is not None and round_num != self._last_round_number)
 
-            home_stocks = live_state.get("home_stocks")
-            if home_stocks is not None:
-                try:
-                    h_val = int(home_stocks)
-                    # Guard: Do not reset team stocks upward during an active ongoing round!
-                    if is_new_round or self._last_round_number is None or self.team1stocks.value() >= h_val:
-                        self.team1stocks.setValue(h_val)
-                except (ValueError, TypeError):
-                    pass
-            away_stocks = live_state.get("away_stocks")
-            if away_stocks is not None:
-                try:
-                    a_val = int(away_stocks)
-                    # Guard: Do not reset team stocks upward during an active ongoing round!
-                    if is_new_round or self._last_round_number is None or self.team2stocks.value() >= a_val:
-                        self.team2stocks.setValue(a_val)
-                except (ValueError, TypeError):
-                    pass
-
-            # 3. Game Rules & Roster Size
             game_type = active_game.get("game", "ultimate")
             stocks_per_player = 4 if game_type == "melee" else 3
-            if self.livesNumber.value() != stocks_per_player:
-                self.livesNumber.setValue(stocks_per_player)
-
-            home_team_id = fixture.get("home_team_id")
-            away_team_id = fixture.get("away_team_id")
-
-            home_players = [p for p in players if p.get("team_id") == home_team_id]
-            away_players = [p for p in players if p.get("team_id") == away_team_id]
-
-            roster_size = max(
-                len(home_players),
-                len(away_players),
-                active_game.get("home_roster_size", 0),
-                active_game.get("away_roster_size", 0),
-                1
-            )
-            if self.playerNumber.value() != roster_size:
-                self.playerNumber.setValue(roster_size)
-            self.SetSpinnerForPlayers()
-
-            # 4. Tournament Name, Phase, Best Of & Match Name
             tournament_season = snapshot.get("tournament_season") or {}
-            tournament_name = tournament_season.get("tournament_name") or "The Nexus"
 
-            # Set Tournament Name field to "The Nexus" by default
-            StateManager.Set("tournamentInfo.tournamentName", tournament_name)
-            app = QApplication.instance()
-            if app:
-                for widget in app.allWidgets():
-                    if widget.objectName() == "tournamentName" and isinstance(widget, QLineEdit):
-                        if widget.text() != tournament_name:
-                            widget.setText(tournament_name)
-                            widget.editingFinished.emit()
+            # Only populate scoreboard, team info, stocks, rules, and game on the initial load
+            if is_initial_load:
+                # 1. Team Names
+                home_name = home_team.get("name") or home_team.get("short_name") or ""
+                away_name = away_team.get("name") or away_team.get("short_name") or ""
+                if home_name:
+                    t1 = self.team1column.findChild(QLineEdit, "teamName")
+                    if t1 and t1.text() != home_name:
+                        t1.setText(home_name)
+                        self.Team1SponsorExport()
+                if away_name:
+                    t2 = self.team2column.findChild(QLineEdit, "teamName")
+                    if t2 and t2.text() != away_name:
+                        t2.setText(away_name)
+                        self.Team2SponsorExport()
 
-            season_name = tournament_season.get("name") or "Nexus League"
-            if self.phaseCombo.currentText() != season_name:
-                self.phaseCombo.setCurrentText(season_name)
-                self.PhaseExport()
+                # 2. Match Scores (Series & Remaining Team Stocks)
+                if fixture.get("home_score") is not None:
+                    self.team1score.setValue(int(fixture.get("home_score")))
+                if fixture.get("away_score") is not None:
+                    self.team2score.setValue(int(fixture.get("away_score")))
 
-            # Best of (from fixture or active_game, default 3)
-            best_of_val = fixture.get("best_of") or active_game.get("best_of") or 3
-            try:
-                best_of_val = int(best_of_val)
-            except (ValueError, TypeError):
-                best_of_val = 3
-            if self.bestOf.value() != best_of_val:
-                self.bestOf.setValue(best_of_val)
-            self.ExportBestOf(best_of_val)
+                # 3. Game Rules & Roster Size
+                if self.livesNumber.value() != stocks_per_player:
+                    self.livesNumber.setValue(stocks_per_player)
 
-            round_num = live_state.get("round_number")
-            match_title = f"Round {round_num}" if round_num else "Crew Battle"
-            if self.matchCombo.currentText() != match_title:
-                self.matchCombo.setCurrentText(match_title)
-                self.MatchExport()
+                # In The Nexus crew battles, team stocks are capped at 4 active combatants * stocks_per_player (12 max)
+                max_crew_combatants = 4
+                max_team_stocks = max_crew_combatants * stocks_per_player
 
-            # 5. Set active game (Nexus currently supports SSBU; future-proofed with snapshot game field)
-            game_target = active_game.get("game") or snapshot.get("game") or tournament_season.get("game") or "ssbu"
-            if TSHGameAssetManager.instance:
-                TSHGameAssetManager.instance.SetGame(game_target)
+                home_stocks = None
+                if live_state:
+                    home_stocks = live_state.get("home_stocks") if live_state.get("home_stocks") is not None else live_state.get("homeStocks")
+                if home_stocks is not None:
+                    try:
+                        h_val = min(max_team_stocks, int(home_stocks))
+                        self.team1stocks.setValue(h_val)
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    self.team1stocks.setValue(min(max_crew_combatants, max(1, len(home_players))) * stocks_per_player)
+
+                away_stocks = None
+                if live_state:
+                    away_stocks = live_state.get("away_stocks") if live_state.get("away_stocks") is not None else live_state.get("awayStocks")
+                if away_stocks is not None:
+                    try:
+                        a_val = min(max_team_stocks, int(away_stocks))
+                        self.team2stocks.setValue(a_val)
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    self.team2stocks.setValue(min(max_crew_combatants, max(1, len(away_players))) * stocks_per_player)
+
+                roster_size = max(
+                    len(home_players),
+                    len(away_players),
+                    active_game.get("home_roster_size", 0),
+                    active_game.get("away_roster_size", 0),
+                    1
+                )
+                if self.playerNumber.value() != roster_size:
+                    self.playerNumber.setValue(roster_size)
+                self.SetSpinnerForPlayers()
+
+                # 4. Tournament Name, Phase, Best Of & Match Name
+                tournament_name = tournament_season.get("tournament_name") or "The Nexus"
+                StateManager.Set("tournamentInfo.tournamentName", tournament_name)
+                app = QApplication.instance()
+                if app:
+                    for widget in app.allWidgets():
+                        if widget.objectName() == "tournamentName" and isinstance(widget, QLineEdit):
+                            if widget.text() != tournament_name:
+                                widget.setText(tournament_name)
+                                widget.editingFinished.emit()
+
+                season_name = tournament_season.get("name") or "Nexus League"
+                if self.phaseCombo.currentText() != season_name:
+                    self.phaseCombo.setCurrentText(season_name)
+                    self.PhaseExport()
+
+                best_of_val = fixture.get("best_of") or active_game.get("best_of") or 3
+                try:
+                    best_of_val = int(best_of_val)
+                except (ValueError, TypeError):
+                    best_of_val = 3
+                if self.bestOf.value() != best_of_val:
+                    self.bestOf.setValue(best_of_val)
+                self.ExportBestOf(best_of_val)
+
+                match_title = f"Round {round_num}" if round_num else "Crew Battle"
+                if self.matchCombo.currentText() != match_title:
+                    self.matchCombo.setCurrentText(match_title)
+                    self.MatchExport()
+
+                # 5. Set active game (schedule asset re-apply if game wasn't already loaded)
+                game_target = active_game.get("game") or snapshot.get("game") or tournament_season.get("game") or "ssbu"
+                if TSHGameAssetManager.instance:
+                    current_codename = str(TSHGameAssetManager.instance.selectedGame.get("codename", "")).strip().lower()
+                    char_count = TSHGameAssetManager.instance.characterModel.rowCount() if TSHGameAssetManager.instance.characterModel else 0
+                    if not current_codename or char_count == 0 or current_codename != str(game_target).strip().lower():
+                        self._awaiting_asset_reapply = True
+                    TSHGameAssetManager.instance.SetGame(game_target)
 
             # Selections & Characters
             selections_by_player = {}
@@ -1095,10 +1082,73 @@ class TSHTeamBattleWidget(QDockWidget):
                 slot = int(sel.get("slot_order") or 999) if sel else 999
                 return (slot, str(p.get("tag", "")).lower(), str(pid or ""))
 
-            home_players.sort(key=sort_key)
-            away_players.sort(key=sort_key)
+            if is_initial_load:
+                home_players.sort(key=sort_key)
+                away_players.sort(key=sort_key)
 
-            # 5. Populate Team 1 & Team 2 Player Widgets
+            def _inspect_widget_char(pw):
+                cur_char_name = None
+                cur_color_idx = 0
+                cur_moveset = getattr(pw, "moveset", None)
+                if pw.character_elements:
+                    char_elem = pw.character_elements[0][1]
+                    color_elem = pw.character_elements[0][2]
+                    var_elem = pw.character_elements[0][3]
+                    cdata = char_elem.currentData()
+                    if cdata and isinstance(cdata, dict) and cdata.get("en_name"):
+                        cur_char_name = cdata.get("en_name")
+                    elif char_elem.currentText():
+                        cur_char_name = char_elem.currentText()
+                    cur_color_idx = color_elem.currentIndex()
+                    if not cur_moveset and var_elem is not None and var_elem.currentText().strip():
+                        cur_moveset = var_elem.currentText().strip()
+                cur_char_name = cur_char_name.strip() if (cur_char_name and cur_char_name.strip()) else None
+                live_char = getattr(pw, "_live_char", None)
+                live_skin = getattr(pw, "_live_skin", None)
+                if live_char:
+                    cur_char_name = live_char
+                if live_skin is not None:
+                    cur_color_idx = live_skin
+                return cur_char_name, max(0, cur_color_idx), cur_moveset
+
+            def _lookup_db_info(tag, sponsor):
+                db_meta = {}
+                db_main_char = None
+                db_skin_idx = 0
+                db_moveset = None
+                db_player = TSHPlayerDB.GetPlayerFromTag(tag, sponsor)
+                if db_player:
+                    for field in ("name", "country_code", "state_code", "twitter", "pronoun"):
+                        if db_player.get(field):
+                            db_meta[field] = db_player.get(field)
+                    mains_dict = db_player.get("mains", {})
+                    if isinstance(mains_dict, dict):
+                        curr_game = TSHGameAssetManager.instance.selectedGame.get("codename", "ssbu") if (TSHGameAssetManager.instance and TSHGameAssetManager.instance.selectedGame) else "ssbu"
+                        g_mains = mains_dict.get(curr_game) or mains_dict.get("ssbu") or mains_dict.get("ultimate") or []
+                        if g_mains and len(g_mains) > 0 and len(g_mains[0]) > 0:
+                            first_m = g_mains[0]
+                            raw_c = first_m[0] if isinstance(first_m, (list, tuple)) else str(first_m)
+                            db_main_char, extracted_ms = normalize_character_name(raw_c)
+                            if len(first_m) > 1 and isinstance(first_m[1], int):
+                                db_skin_idx = first_m[1]
+                            if len(first_m) > 2 and first_m[2]:
+                                db_moveset = str(first_m[2]).strip()
+                            elif extracted_ms:
+                                db_moveset = extracted_ms
+                return db_meta, db_main_char, db_skin_idx, db_moveset
+
+            def _find_existing_widget(p_id, tag, player_widgets, used_widgets):
+                if p_id:
+                    for pw in player_widgets:
+                        if pw not in used_widgets and getattr(pw, "_last_loaded_player_id", None) == p_id:
+                            return pw
+                if tag:
+                    for pw in player_widgets:
+                        if pw not in used_widgets and getattr(pw, "_last_loaded_player_tag", None) == tag:
+                            return pw
+                return None
+
+            # Populate / Sync Team 1 & Team 2 Player Widgets
             home_round_start = live_state.get("home_round_start_stocks")
             away_round_start = live_state.get("away_round_start_stocks")
             stk_default = stocks_per_player
@@ -1113,8 +1163,7 @@ class TSHTeamBattleWidget(QDockWidget):
                 # Determine active player for this team:
                 # 1. If active_id is explicitly set by live_state, use that player
                 # 2. If active_id is None but players from this team were already sent in,
-                #    keep the most recently sent-in player (highest slot_order) marked active
-                #    (with 0 stocks & eliminated status) until the next player is sent in.
+                #    keep the most recently sent-in player (highest slot_order) marked active.
                 effective_active_id = active_id
                 if not effective_active_id:
                     team_selections = []
@@ -1131,173 +1180,185 @@ class TSHTeamBattleWidget(QDockWidget):
                     effective_active_id = str(effective_active_id)
                 current_effective_active[team_idx] = effective_active_id
 
-                for p_idx, player in enumerate(team_players):
-                    if p_idx < len(player_widgets):
-                        pw = player_widgets[p_idx]
+                last_active = getattr(self, "_last_effective_active", {}).get(team_idx)
+                if last_active is not None:
+                    last_active = str(last_active)
+                is_active_changed = is_initial_load or (last_active != effective_active_id)
+
+                # Pair each player with its target widget
+                assignments = []
+                used_widgets = set()
+                if is_initial_load:
+                    for p_idx, player in enumerate(team_players):
+                        if p_idx < len(player_widgets):
+                            pw = player_widgets[p_idx]
+                            assignments.append((player, pw, True))
+                            used_widgets.add(pw)
+                else:
+                    unmatched_players = []
+                    for player in team_players:
                         p_id = str(player.get("id")) if player.get("id") is not None else None
                         tag = player.get("tag", "")
+                        pw = _find_existing_widget(p_id, tag, player_widgets, used_widgets)
+                        if pw is not None:
+                            assignments.append((player, pw, False))
+                            used_widgets.add(pw)
+                        else:
+                            unmatched_players.append(player)
+                    # Only assign newly joined subs into truly empty slots
+                    empty_widgets = [
+                        pw for pw in player_widgets
+                        if pw not in used_widgets
+                        and not getattr(pw, "_last_loaded_player_id", None)
+                        and not getattr(pw, "_last_loaded_player_tag", None)
+                    ]
+                    for player, pw in zip(unmatched_players, empty_widgets):
+                        assignments.append((player, pw, True))
+                        used_widgets.add(pw)
 
-                        is_active = (p_id == effective_active_id) if (effective_active_id and p_id) else False
-                        sel_entry = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id) or {}
-                        bp_entry = blind_by_player.get(player.get("id")) or blind_by_player.get(p_id) or {}
-                        is_round_one = (live_state.get("round_number") or 1) == 1
-                        is_starter_selection_phase = live_state.get("phase") in ("blind_pick", "player_select")
-                        is_starter_hidden = (is_round_one and is_starter_selection_phase and (not active_home_id or not active_away_id))
+                for player, pw, is_first_for_widget in assignments:
+                    p_id = str(player.get("id")) if player.get("id") is not None else None
+                    tag = player.get("tag", "")
 
-                        # Determine character:
-                        # 1. Roster selections (confirmed sent-in player pick) takes highest priority
-                        char_name = sel_entry.get("selected_character") or sel_entry.get("character")
-                        if char_name in ("", "Character not selected", "None", None):
-                            char_name = None
+                    is_active = (p_id == effective_active_id) if (effective_active_id and p_id) else False
+                    sel_entry = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id) or {}
+                    bp_entry = blind_by_player.get(player.get("id")) or blind_by_player.get(p_id) or {}
+                    is_starter_hidden = (is_round_one and is_starter_selection_phase and (not active_home_id or not active_away_id))
 
-                        # 2. If roster selection has no character, fallback to blind pick ONLY for round 1 starter
-                        # (slot 1 or active starter) once starters are revealed. Standby/bench players never show blind picks.
-                        if not char_name and not is_starter_hidden:
-                            if sel_entry.get("slot_order") == 1 or (is_round_one and is_active):
-                                bp_char = bp_entry.get("selected_character") or bp_entry.get("character")
-                                if bp_char and bp_char not in ("", "Character not selected", "None"):
-                                    char_name = bp_char
+                    # Determine character from Nexus snapshot:
+                    # 1. Roster selections (confirmed sent-in player pick) takes highest priority
+                    char_name = sel_entry.get("selected_character") or sel_entry.get("character")
+                    if char_name in ("", "Character not selected", "None", None):
+                        char_name = None
 
-                        base_char, moveset = normalize_character_name(char_name)
+                    # 2. If roster selection has no character, fallback to blind pick ONLY for round 1 starter
+                    if not char_name and not is_starter_hidden:
+                        if sel_entry.get("slot_order") == 1 or (is_round_one and is_active):
+                            bp_char = bp_entry.get("selected_character") or bp_entry.get("character")
+                            if bp_char and bp_char not in ("", "Character not selected", "None"):
+                                char_name = bp_char
 
+                    base_char, moveset = normalize_character_name(char_name)
+
+                    if is_first_for_widget:
+                        pw._live_char = None
+                        pw._live_skin = None
+                        pw._last_nexus_char = None
+                        pw._last_nexus_moveset = None
+                        pw.moveset = None
+                        pw._last_loaded_player_id = p_id
+                        pw._last_loaded_player_tag = tag
+
+                        db_meta, db_main_char, db_skin_idx, db_moveset = _lookup_db_info(tag, sponsor)
                         player_data = {
                             "gamerTag": tag,
                             "prefix": sponsor,
+                            **db_meta,
                         }
-
-                        # Check existing widget character, skin, and moveset
-                        cur_char_name = None
-                        cur_color_idx = 0
-                        cur_moveset = getattr(pw, "moveset", None)
-                        if pw.character_elements:
-                            char_elem = pw.character_elements[0][1]
-                            color_elem = pw.character_elements[0][2]
-                            var_elem = pw.character_elements[0][3]
-                            cdata = char_elem.currentData()
-                            if cdata and isinstance(cdata, dict) and cdata.get("en_name"):
-                                cur_char_name = cdata.get("en_name")
-                            elif char_elem.currentText():
-                                cur_char_name = char_elem.currentText()
-                            cur_color_idx = color_elem.currentIndex()
-                            if not cur_moveset and var_elem is not None and var_elem.currentText().strip():
-                                cur_moveset = var_elem.currentText().strip()
-
-                        if cur_char_name and cur_char_name.strip():
-                            cur_char_name = cur_char_name.strip()
-                        else:
-                            cur_char_name = None
-
-                        # If live sync set a character/skin for this player, prioritize it
-                        live_char = getattr(pw, "_live_char", None)
-                        live_skin = getattr(pw, "_live_skin", None)
-                        if live_char:
-                            cur_char_name = live_char
-                        if live_skin is not None:
-                            cur_color_idx = live_skin
-
-                        # Look up player in local player database (local_players.json)
-                        db_player = TSHPlayerDB.GetPlayerFromTag(tag, sponsor)
-                        db_main_char = None
-                        db_skin_idx = 0
-                        db_moveset = None
-                        if db_player:
-                            for field in ("name", "country_code", "state_code", "twitter", "pronoun"):
-                                if db_player.get(field):
-                                    player_data[field] = db_player.get(field)
-                            mains_dict = db_player.get("mains", {})
-                            if isinstance(mains_dict, dict):
-                                curr_game = TSHGameAssetManager.instance.selectedGame.get("codename", "ssbu") if (TSHGameAssetManager.instance and TSHGameAssetManager.instance.selectedGame) else "ssbu"
-                                g_mains = mains_dict.get(curr_game) or mains_dict.get("ssbu") or mains_dict.get("ultimate") or []
-                                if g_mains and len(g_mains) > 0 and len(g_mains[0]) > 0:
-                                    first_m = g_mains[0]
-                                    raw_c = first_m[0] if isinstance(first_m, (list, tuple)) else str(first_m)
-                                    db_main_char, extracted_ms = normalize_character_name(raw_c)
-                                    if len(first_m) > 1 and isinstance(first_m[1], int):
-                                        db_skin_idx = first_m[1]
-                                    if len(first_m) > 2 and first_m[2]:
-                                        db_moveset = str(first_m[2]).strip()
-                                    elif extracted_ms:
-                                        db_moveset = extracted_ms
-
-                        # Priority:
-                        # 1. Roster selections (active / confirmed sent-in pick from live match snapshot)
-                        # 2. Existing live_char from live sync
-                        # 3. Existing widget selection (if manually selected)
-                        # 4. Local players database main (from local_players.json)
-                        if (is_active or live_char) and cur_char_name:
-                            player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
-                        elif base_char:
-                            player_data["mains"] = {"ssbu": [[base_char, cur_color_idx]]}
-                        elif cur_char_name:
-                            player_data["mains"] = {"ssbu": [[cur_char_name, cur_color_idx]]}
+                        if base_char:
+                            init_skin = db_skin_idx if (db_main_char and db_main_char.lower() == base_char.lower()) else 0
+                            player_data["mains"] = {"ssbu": [[base_char, init_skin]]}
                         elif db_main_char:
                             player_data["mains"] = {"ssbu": [[db_main_char, db_skin_idx]]}
                         else:
                             player_data["mains"] = [""]
 
-                        final_moveset = moveset or cur_moveset or db_moveset or ""
-                        player_data["moveset"] = final_moveset
-
-                        pw.SetData(player_data, dontLoadFromDB=True, clear=False)
+                        player_data["moveset"] = moveset or db_moveset or ""
+                        pw.SetData(player_data, dontLoadFromDB=True, clear=True)
+                        pw._last_nexus_char = base_char
+                        pw._last_nexus_moveset = moveset
                         pw.SetActiveStatus(is_active)
 
-                        # Set player stocks and eliminated status
+                        # Set initial player stocks and eliminated status
                         sel = selections_by_player.get(player.get("id")) or selections_by_player.get(p_id)
-                        last_active = getattr(self, "_last_effective_active", {}).get(team_idx)
-                        if last_active is not None:
-                            last_active = str(last_active)
-                        is_new_active = (last_active != effective_active_id)
-
                         if sel is not None:
-                            # Player has entered the match / been sent in
                             p_stocks = sel.get("stocks_remaining")
-                            # If actively playing and not eliminated, respect round_start_stk if present
                             if is_active and p_stocks is not None and int(p_stocks) > 0 and round_start_stk is not None:
                                 cur_stk = int(round_start_stk)
                             elif p_stocks is not None:
                                 cur_stk = int(p_stocks)
                             else:
                                 cur_stk = stk_default
-
-                            current_val = pw.dynamicSpinner.value()
-                            # Guard: Do not reset stocks upward during an active ongoing round!
-                            if is_active and not is_new_round and not is_new_active and 0 <= current_val < cur_stk:
-                                # Keep the in-game decremented stocks
-                                pass
-                            else:
-                                pw.dynamicSpinner.setValue(cur_stk)
-                                pw.SetEliminatedStatus(cur_stk <= 0)
-                                pw._previous_stock = cur_stk
+                            pw.dynamicSpinner.setValue(cur_stk)
+                            pw.SetEliminatedStatus(cur_stk <= 0)
+                            pw._previous_stock = cur_stk
                         else:
-                            # Bench player: has not been sent in yet
                             pw.dynamicSpinner.setValue(stk_default)
                             pw.SetEliminatedStatus(False)
                             pw._previous_stock = stk_default
+                    else:
+                        # Subsequent update (periodic sync or asset-load reapply)
+                        cur_char_name, cur_color_idx, cur_moveset = _inspect_widget_char(pw)
+                        prev_nexus_char = getattr(pw, "_last_nexus_char", None)
+                        prev_nexus_moveset = getattr(pw, "_last_nexus_moveset", None)
+                        nexus_char_changed = (base_char, moveset) != (prev_nexus_char, prev_nexus_moveset)
+
+                        if not reapply_assets and is_active_changed:
+                            pw.SetActiveStatus(is_active)
+
+                        if reapply_assets:
+                            _, db_main_char, db_skin_idx, db_moveset = _lookup_db_info(tag, sponsor)
+                            if base_char:
+                                target_skin = cur_color_idx if (cur_char_name and cur_char_name.lower() == base_char.lower()) else (
+                                    db_skin_idx if (db_main_char and db_main_char.lower() == base_char.lower()) else 0
+                                )
+                                char_data = {"mains": {"ssbu": [[base_char, target_skin]]}}
+                                char_data["moveset"] = moveset or cur_moveset or db_moveset or ""
+                                pw.SetData(char_data, dontLoadFromDB=True, clear=False)
+                            elif not cur_char_name and db_main_char:
+                                char_data = {"mains": {"ssbu": [[db_main_char, db_skin_idx]]}, "moveset": db_moveset or ""}
+                                pw.SetData(char_data, dontLoadFromDB=True, clear=False)
+                            pw._last_nexus_char = base_char
+                            pw._last_nexus_moveset = moveset
+                        elif nexus_char_changed:
+                            if base_char:
+                                _, db_main_char, db_skin_idx, db_moveset = _lookup_db_info(tag, sponsor)
+                                same_char = bool(cur_char_name and cur_char_name.lower() == base_char.lower())
+                                if same_char:
+                                    target_skin = cur_color_idx
+                                elif db_main_char and db_main_char.lower() == base_char.lower():
+                                    target_skin = db_skin_idx
+                                else:
+                                    target_skin = 0
+
+                                pw._live_char = None
+                                pw._live_skin = None
+                                char_data = {"mains": {"ssbu": [[base_char, target_skin]]}}
+                                if moveset:
+                                    char_data["moveset"] = moveset
+                                elif not same_char:
+                                    pw.moveset = None
+                                    if db_main_char and db_main_char.lower() == base_char.lower() and db_moveset:
+                                        char_data["moveset"] = db_moveset
+                                pw.SetData(char_data, dontLoadFromDB=True, clear=False)
+                            pw._last_nexus_char = base_char
+                            pw._last_nexus_moveset = moveset
+
+                if not is_initial_load and not reapply_assets and is_active_changed:
+                    for pw in player_widgets:
+                        if pw not in used_widgets and pw.IsActive():
+                            pw.SetActiveStatus(False)
 
             # Record active round and player tracking
             self._last_round_number = round_num
             self._last_effective_active = current_effective_active
 
             # Save double blind picks to StateManager for dedicated stream overlays / scenes
-            # During Round 1 starter selection before reveal, do not leak blind picks to stream state
-            is_round_one = (live_state.get("round_number") or 1) == 1
             is_starter_hidden = (is_round_one and (not active_home_id or not active_away_id))
             exported_blind_picks = [] if is_starter_hidden else blind_picks
             StateManager.Set("team_battle.blind_picks", exported_blind_picks)
-            home_team_id = home_team.get("id")
-            away_team_id = away_team.get("id")
             team1_blind_picks = [
                 bp for bp in exported_blind_picks
-                if bp.get("team_id") == home_team_id or bp.get("side") == "home" or bp.get("team_side") == "home"
+                if bp.get("team_id") == home_team.get("id") or bp.get("side") == "home" or bp.get("team_side") == "home"
             ]
             team2_blind_picks = [
                 bp for bp in exported_blind_picks
-                if bp.get("team_id") == away_team_id or bp.get("side") == "away" or bp.get("team_side") == "away"
+                if bp.get("team_id") == away_team.get("id") or bp.get("side") == "away" or bp.get("team_side") == "away"
             ]
             StateManager.Set("team_battle.team.1.blind_picks", team1_blind_picks)
             StateManager.Set("team_battle.team.2.blind_picks", team2_blind_picks)
 
-            # Record last applied state
+            # Record last applied metadata
             self._last_game_id = active_game.get("id")
             self._last_game_order = active_game.get("game_order")
             self._last_home_score = fixture.get("home_score")
@@ -1310,21 +1371,24 @@ class TSHTeamBattleWidget(QDockWidget):
             if is_match_complete:
                 home_score = int(fixture.get("home_score") or 0)
                 away_score = int(fixture.get("away_score") or 0)
-                if home_score > away_score:
-                    self.team2stocks.setValue(0)
-                    for pw in self.team2playerWidgets:
-                        if pw.IsActive():
-                            pw.dynamicSpinner.setValue(0)
-                            pw.SetEliminatedStatus(True)
-                elif away_score > home_score:
-                    self.team1stocks.setValue(0)
-                    for pw in self.team1playerWidgets:
-                        if pw.IsActive():
-                            pw.dynamicSpinner.setValue(0)
-                            pw.SetEliminatedStatus(True)
+                if is_initial_load:
+                    if home_score > away_score:
+                        self.team2stocks.setValue(0)
+                        for pw in self.team2playerWidgets:
+                            if pw.IsActive():
+                                pw.dynamicSpinner.setValue(0)
+                                pw.SetEliminatedStatus(True)
+                    elif away_score > home_score:
+                        self.team1stocks.setValue(0)
+                        for pw in self.team1playerWidgets:
+                            if pw.IsActive():
+                                pw.dynamicSpinner.setValue(0)
+                                pw.SetEliminatedStatus(True)
                 self.SetNexusStatus("connected", f"Match complete ({home_score} - {away_score})")
 
-            self.TotalScoreExport()
+            if is_initial_load:
+                self.TotalScoreExport()
+            self._initial_sync_done = True
         except Exception as e:
             logger.error(f"[TSHTeamBattleWidget] Error applying Nexus data: {e}")
         finally:
